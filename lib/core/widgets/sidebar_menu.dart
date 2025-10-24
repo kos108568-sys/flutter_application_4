@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_application_4/core/widgets/custom_button.dart';
 import '../../features/schedules/presentation/pages/schedules_page.dart';
+import '../../features/disciplines/presentation/pages/disciplines_page.dart';
+import '../../features/groups/presentation/pages/groups_screen.dart';
 import '../../features/settings/presentation/pages/settings_page.dart';
 import '../constants/app_colors.dart';
 
@@ -20,17 +22,18 @@ class SidebarMenu extends StatelessWidget {
           children: [
             const CircleAvatar(radius: 30, backgroundColor: Colors.grey),
             const SizedBox(height: 8),
-            const Text("Савицкий В. А.", style: TextStyle(fontWeight: FontWeight.w600)),
-            const Text("Директор", style: TextStyle(fontSize: 12)),
+            const Text('Савицкий В. А.', style: TextStyle(fontWeight: FontWeight.w600)),
+            const Text('Доцент', style: TextStyle(fontSize: 12)),
             const SizedBox(height: 20),
             const Divider(),
-            _navItem(context, Icons.home, "Главная", const SchedulesPage()),
-            _navItem(context, Icons.analytics, "Аналитика", null),
-            _navItem(context, Icons.schedule, "Расписание", const SchedulesPage()),
-            _navItem(context, Icons.calendar_today, "График занятий", null),
-            _navItem(context, Icons.settings, "Настройки", const SettingsPage()),
+            _navItem(context, Icons.home, 'Главная', const SchedulesPage()),
+            _navItem(context, Icons.menu_book, 'Дисциплины', const DisciplinesPage()),
+            _navItem(context, Icons.group, 'Группы', const GroupsScreen()),
+            _navItem(context, Icons.schedule, 'Расписание', const SchedulesPage()),
+            _navItem(context, Icons.calendar_today, 'График занятий', null),
+            _navItem(context, Icons.settings, 'Настройки', const SettingsPage()),
             const Spacer(),
-           CustomButton(text: "Создать", onPressed: () {},),
+            CustomButton(text: 'Создать', onPressed: () {}),
           ],
         ),
       ),
@@ -68,3 +71,4 @@ class SidebarMenu extends StatelessWidget {
     );
   }
 }
+

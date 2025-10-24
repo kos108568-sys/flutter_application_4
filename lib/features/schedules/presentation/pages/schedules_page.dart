@@ -1,4 +1,4 @@
-import 'package:flutter/material.dart';
+﻿import 'package:flutter/material.dart';
 import '../../../../core/constants/app_text_styles.dart';
 import '../../../../core/widgets/sidebar_menu.dart';
 import '../../../../core/widgets/schedule_card.dart';
@@ -13,15 +13,15 @@ class SchedulesPage extends StatelessWidget {
     final schedules = [
       ScheduleModel(groupName: 'ПО-42', imageUrl: 'assets/schedule1.png'),
       ScheduleModel(groupName: 'ПО-41', imageUrl: ''),
-      ScheduleModel(groupName: 'У-11', imageUrl: 'assets/schedule2.png'),
-      ScheduleModel(groupName: 'ТМО-123', imageUrl: ''),
+      ScheduleModel(groupName: 'П-11', imageUrl: 'assets/schedule2.png'),
+      ScheduleModel(groupName: 'ИТ-123', imageUrl: ''),
     ];
 
     return Scaffold(
       backgroundColor: AppColors.background,
       body: Row(
         children: [
-          const SidebarMenu(),
+          const SidebarMenu(selected: 'Расписание'),
           Expanded(
             child: Padding(
               padding: const EdgeInsets.all(24.0),
@@ -29,11 +29,11 @@ class SchedulesPage extends StatelessWidget {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    const Text("Недавние", style: AppTextStyles.sectionTitle),
+                    const Text('Расписание', style: AppTextStyles.sectionTitle),
                     const SizedBox(height: 16),
                     _buildGrid(schedules),
                     const SizedBox(height: 24),
-                    const Text("Избранное", style: AppTextStyles.sectionTitle),
+                    const Text('Недавние', style: AppTextStyles.sectionTitle),
                     const SizedBox(height: 16),
                     _buildGrid(schedules),
                   ],

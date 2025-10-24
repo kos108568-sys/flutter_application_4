@@ -1,0 +1,202 @@
+import 'package:flutter/material.dart';
+import '../../../disciplines/data/discipline_model.dart';
+import '../../../disciplines/data/disciplines_repository.dart';
+import '../../data/group_model.dart';
+import '../../data/groups_repository.dart';
+import '../../../../core/widgets/sidebar_menu.dart';
+
+class GroupsPage extends StatefulWidget {
+  const GroupsPage({super.key});
+
+  @override
+  State<GroupsPage> createState() => _GroupsPageState();
+}
+
+class _GroupsPageState extends State<GroupsPage> {
+  final _groupsRepo = GroupsRepository();
+  final _discRepo = DisciplinesRepository();
+
+  final _nameCtrl = TextEditingController();
+  final _sizeCtrl = TextEditingController();
+  final _curatorCtrl = TextEditingController();
+  final _courseCtrl = TextEditingController();
+  final _specialtyCtrl = TextEditingController();
+
+  List<DisciplineModel> _allDisc = [];
+  final Set<int> _selectedDiscIds = {};
+
+  @override
+  void initState() {
+    super.initState();
+    _load();
+  }
+
+  Future<void> _load() async {
+    final allDisc = await _discRepo.getAll(orderBy: 'name ASC');
+    if (!mounted) return;
+    setState(() => _allDisc = allDisc);
+  }
+
+  Future<void> _save() async {
+    final model = GroupModel(
+      name: _nameCtrl.text.trim(),
+      size: int.tryParse(_sizeCtrl.text.trim()),
+      curator: _curatorCtrl.text.trim().isEmpty ? null : _curatorCtrl.text.trim(),
+      course: int.tryParse(_courseCtrl.text.trim()),
+      specialty: _specialtyCtrl.text.trim().isEmpty ? null : _specialtyCtrl.text.trim(),
+      disciplineIds: _selectedDiscIds.toList(),
+    );
+    await _groupsRepo.insert(model);
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Группа сохранена')));
+    _nameCtrl.clear();
+    _sizeCtrl.clear();
+    _curatorCtrl.clear();
+    _courseCtrl.clear();
+    _specialtyCtrl.clear();
+    setState(() => _selectedDiscIds.clear());
+  }
+
+  @override
+  void dispose() {
+    _nameCtrl.dispose();
+    _sizeCtrl.dispose();
+    _curatorCtrl.dispose();
+    _courseCtrl.dispose();
+    _specialtyCtrl.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: const Color(0xFFF5F6FA),
+      body: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const SidebarMenu(selected: 'Группы'),
+          Expanded(
+            child: Center(
+              child: Container(
+                constraints: const BoxConstraints(maxWidth: 820),
+                padding: const EdgeInsets.all(24),
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(16),
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.black.withOpacity(0.05),
+                      blurRadius: 10,
+                      offset: const Offset(0, 4),
+                    ),
+                  ],
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const Text('Добавление группы', style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold)),
+                    const SizedBox(height: 16),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: TextField(
+                            controller: _nameCtrl,
+                            decoration: const InputDecoration(labelText: 'Название группы'),
+                          ),
+                        ),
+                        const SizedBox(width: 16),
+                        Expanded(
+                          child: TextField(
+                            controller: _specialtyCtrl,
+                            decoration: const InputDecoration(labelText: 'Специальность'),
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 12),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: TextField(
+                            controller: _curatorCtrl,
+                            decoration: const InputDecoration(labelText: 'Куратор'),
+                          ),
+                        ),
+                        const SizedBox(width: 16),
+                        Expanded(
+                          child: TextField(
+                            controller: _sizeCtrl,
+                            keyboardType: TextInputType.number,
+                            decoration: const InputDecoration(labelText: 'Количество человек'),
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 12),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: TextField(
+                            controller: _courseCtrl,
+                            keyboardType: TextInputType.number,
+                            decoration: const InputDecoration(labelText: 'Курс'),
+                          ),
+                        ),
+                        const SizedBox(width: 16),
+                        const Expanded(child: SizedBox()),
+                      ],
+                    ),
+                    const SizedBox(height: 16),
+                    const Text('Дисциплины', style: TextStyle(fontWeight: FontWeight.w600)),
+                    const SizedBox(height: 8),
+                    Wrap(
+                      spacing: 8,
+                      runSpacing: 8,
+                      children: _allDisc.map((d) {
+                        final selected = d.id != null && _selectedDiscIds.contains(d.id);
+                        return FilterChip(
+                          label: Text(d.name),
+                          selected: selected,
+                          selectedColor: Colors.blue.shade100,
+                          onSelected: (val) {
+                            setState(() {
+                              if (d.id == null) return;
+                              if (val) {
+                                _selectedDiscIds.add(d.id!);
+                              } else {
+                                _selectedDiscIds.remove(d.id);
+                              }
+                            });
+                          },
+                        );
+                      }).toList(),
+                    ),
+                    const SizedBox(height: 20),
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.end,
+                      children: [
+                        TextButton(
+                          onPressed: () {
+                            Navigator.maybePop(context);
+                          },
+                          child: const Text('Отмена'),
+                        ),
+                        const SizedBox(width: 12),
+                        ElevatedButton(
+                          onPressed: _save,
+                          child: const Text('Сохранить'),
+                        ),
+                      ],
+                    )
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
