@@ -1,0 +1,70 @@
+import 'package:flutter/material.dart';
+import 'package:flutter_application_4/core/widgets/custom_button.dart';
+import '../../features/schedules/presentation/pages/schedules_page.dart';
+import '../../features/settings/presentation/pages/settings_page.dart';
+import '../constants/app_colors.dart';
+
+class SidebarMenu extends StatelessWidget {
+  final String? selected;
+
+  const SidebarMenu({super.key, this.selected});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: 200,
+      color: AppColors.sidebar,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(vertical: 16, horizontal: 12),
+        child: Column(
+          children: [
+            const CircleAvatar(radius: 30, backgroundColor: Colors.grey),
+            const SizedBox(height: 8),
+            const Text("Савицкий В. А.", style: TextStyle(fontWeight: FontWeight.w600)),
+            const Text("Директор", style: TextStyle(fontSize: 12)),
+            const SizedBox(height: 20),
+            const Divider(),
+            _navItem(context, Icons.home, "Главная", const SchedulesPage()),
+            _navItem(context, Icons.analytics, "Аналитика", null),
+            _navItem(context, Icons.schedule, "Расписание", const SchedulesPage()),
+            _navItem(context, Icons.calendar_today, "График занятий", null),
+            _navItem(context, Icons.settings, "Настройки", const SettingsPage()),
+            const Spacer(),
+           CustomButton(text: "Создать", onPressed: () {},),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _navItem(BuildContext context, IconData icon, String label, Widget? page) {
+    final isActive = selected == label;
+
+    return InkWell(
+      onTap: page == null
+          ? null
+          : () {
+              Navigator.pushReplacement(
+                context,
+                MaterialPageRoute(builder: (_) => page),
+              );
+            },
+      child: Padding(
+        padding: const EdgeInsets.symmetric(vertical: 8),
+        child: Row(
+          children: [
+            Icon(icon, size: 18, color: isActive ? AppColors.accent : Colors.black87),
+            const SizedBox(width: 8),
+            Text(
+              label,
+              style: TextStyle(
+                color: isActive ? AppColors.accent : Colors.black87,
+                fontWeight: isActive ? FontWeight.w600 : FontWeight.normal,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
