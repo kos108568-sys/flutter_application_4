@@ -3,9 +3,19 @@ import '../../data/teacher_model.dart';
 
 class TeacherCard extends StatelessWidget {
   final TeacherModel teacher;
-  final String? curatorGroupName;
+  final String curatorInfo;
+  final int subjectCount;
+  final int audienceCount;
   final VoidCallback? onTap;
-  const TeacherCard({super.key, required this.teacher, this.curatorGroupName, this.onTap});
+
+  const TeacherCard({
+    super.key,
+    required this.teacher,
+    required this.curatorInfo,
+    required this.subjectCount,
+    required this.audienceCount,
+    this.onTap,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -40,12 +50,20 @@ class TeacherCard extends StatelessWidget {
                 const SizedBox(width: 6),
                 Expanded(
                   child: Text(
-                    curatorGroupName ?? 'Куратор: —',
+                    curatorInfo,
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                     style: const TextStyle(color: Colors.grey),
                   ),
                 ),
+              ],
+            ),
+            const SizedBox(height: 8),
+            Row(
+              children: [
+                _chip(Icons.menu_book, 'Предметов: $subjectCount'),
+                const SizedBox(width: 8),
+                _chip(Icons.meeting_room, 'Аудитории: $audienceCount'),
               ],
             )
           ],
@@ -53,5 +71,21 @@ class TeacherCard extends StatelessWidget {
       ),
     );
   }
-}
 
+  Widget _chip(IconData icon, String text) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+      decoration: BoxDecoration(
+        color: const Color(0xFFF1F3F7),
+        borderRadius: BorderRadius.circular(10),
+      ),
+      child: Row(
+        children: [
+          Icon(icon, size: 12, color: Colors.grey.shade700),
+          const SizedBox(width: 4),
+          Text(text, style: TextStyle(fontSize: 12, color: Colors.grey.shade800)),
+        ],
+      ),
+    );
+  }
+}

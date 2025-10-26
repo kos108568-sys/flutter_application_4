@@ -1,7 +1,8 @@
 ﻿import 'package:flutter/material.dart';
 import 'package:flutter_application_4/features/audiences/presentation/pages/audiences_screen.dart';
-import 'package:flutter_application_4/features/disciplines/presentation/pages/disciplines_page.dart';
+
 import 'package:flutter_application_4/features/groups/presentation/pages/groups_screen.dart';
+import 'package:flutter_application_4/features/subjects/presentation/pages/subjects_page.dart';
 import 'package:flutter_application_4/features/teachers/presentation/pages/teachers_screen.dart';
 import '../../../../core/constants/app_colors.dart';
 import '../../../../core/constants/app_text_styles.dart';
@@ -53,7 +54,7 @@ class SettingsPage extends StatelessWidget {
                             } else if (item.title == 'Дисциплины') {
                               Navigator.push(
                                 context,
-                                MaterialPageRoute(builder: (_) => const DisciplinesPage()),
+                                MaterialPageRoute(builder: (_) => const SubjectsPage()),
                               );
                             } else if (item.title == 'Группы') {
                               Navigator.push(

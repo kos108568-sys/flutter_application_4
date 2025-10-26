@@ -39,7 +39,7 @@ class GroupCard extends StatelessWidget {
                 const SizedBox(width: 6),
                 Expanded(
                   child: Text(
-                    group.curator ?? 'Куратор не назначен',
+                    group.curatorName ?? 'Куратор не назначен',
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                     style: const TextStyle(color: Colors.grey),
@@ -50,13 +50,16 @@ class GroupCard extends StatelessWidget {
             const SizedBox(height: 6),
             Row(
               children: [
-                _chip(Icons.people, (group.size ?? 0).toString()),
+                _chip(Icons.people, (group.studentCount ?? 0).toString()),
                 const SizedBox(width: 6),
                 _chip(Icons.school, 'Курс ${group.course ?? '-'}'),
                 const SizedBox(width: 6),
                 Expanded(
                   child: Text(
-                    group.specialty ?? '',
+                    [
+                      if (group.speciality != null) group.speciality!,
+                      if (group.department != null) '(${group.department})'
+                    ].join(' '),
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                     style: const TextStyle(color: Colors.grey),

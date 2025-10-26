@@ -1,5 +1,9 @@
 import 'package:flutter/material.dart';
 import '../../../../core/widgets/sidebar_menu.dart';
+import '../../../subjects/data/subject_model.dart';
+import '../../../subjects/data/subjects_repository.dart';
+import '../../../teachers/data/teacher_model.dart';
+import '../../../teachers/data/teachers_repository.dart';
 import '../../data/group_model.dart';
 import '../../data/groups_repository.dart';
 import '../widgets/group_card.dart';
@@ -14,9 +18,14 @@ class GroupsScreen extends StatefulWidget {
 }
 
 class _GroupsScreenState extends State<GroupsScreen> {
-  final _repo = GroupsRepository();
+  final _groupsRepo = GroupsRepository();
+  final _teachersRepo = TeachersRepository();
+  final _subjectsRepo = SubjectsRepository();
+
   List<GroupModel> all = [];
   List<GroupModel> filtered = [];
+  List<TeacherModel> _teachers = [];
+  List<SubjectModel> _subjects = [];
   bool isGrid = true;
 
   @override
@@ -26,21 +35,29 @@ class _GroupsScreenState extends State<GroupsScreen> {
   }
 
   Future<void> _init() async {
-    await _repo.seedIfEmpty();
-    final items = await _repo.getAll(orderBy: 'name ASC');
+    await _groupsRepo.seedIfEmpty();
+    final items = await _groupsRepo.getAll(orderBy: 'g.name ASC');
+    final teachers = await _teachersRepo.getAll(orderBy: 'full_name ASC');
+    final subjects = await _subjectsRepo.getAll(orderBy: 'name ASC');
     if (!mounted) return;
     setState(() {
       all = items;
       filtered = List.of(items);
+      _teachers = teachers;
+      _subjects = subjects;
     });
   }
 
   void _onFilterChanged(String q) {
     setState(() {
       filtered = all
-          .where((e) => e.name.toLowerCase().contains(q.toLowerCase()) ||
-              (e.curator ?? '').toLowerCase().contains(q.toLowerCase()) ||
-              (e.specialty ?? '').toLowerCase().contains(q.toLowerCase()))
+          .where(
+            (e) =>
+                e.name.toLowerCase().contains(q.toLowerCase()) ||
+                (e.curatorName ?? '').toLowerCase().contains(q.toLowerCase()) ||
+                (e.speciality ?? '').toLowerCase().contains(q.toLowerCase()) ||
+                (e.department ?? '').toLowerCase().contains(q.toLowerCase()),
+          )
           .toList();
     });
   }
@@ -49,7 +66,7 @@ class _GroupsScreenState extends State<GroupsScreen> {
     setState(() {
       switch (by) {
         case 'size':
-          filtered.sort((a, b) => (a.size ?? 0).compareTo(b.size ?? 0));
+          filtered.sort((a, b) => (a.studentCount ?? 0).compareTo(b.studentCount ?? 0));
           break;
         case 'course':
           filtered.sort((a, b) => (a.course ?? 0).compareTo(b.course ?? 0));
@@ -63,19 +80,21 @@ class _GroupsScreenState extends State<GroupsScreen> {
 
   void _onViewChanged(bool grid) => setState(() => isGrid = grid);
 
-  Future<void> _editGroup(GroupModel g) async {
-    final name = TextEditingController(text: g.name);
-    final curator = TextEditingController(text: g.curator ?? '');
-    final size = TextEditingController(text: (g.size ?? '').toString());
-    final course = TextEditingController(text: (g.course ?? '').toString());
-    final specialty = TextEditingController(text: g.specialty ?? '');
+  Future<void> _editGroup(GroupModel group) async {
+    final name = TextEditingController(text: group.name);
+    final studentCount = TextEditingController(text: (group.studentCount ?? '').toString());
+    final course = TextEditingController(text: (group.course ?? '').toString());
+    final speciality = TextEditingController(text: group.speciality ?? '');
+    final department = TextEditingController(text: group.department ?? '');
+    int? curatorId = group.curatorId;
+    final selectedSubjects = {...group.subjectIds};
 
-    final confirmDelete = () async {
+    Future<bool> confirmDelete() async {
       final ok = await showDialog<bool>(
         context: context,
         builder: (ctx) => AlertDialog(
           title: const Text('Удалить группу?'),
-          content: Text('Вы уверены, что хотите удалить группу "${g.name}"?'),
+          content: Text('Вы уверены, что хотите удалить "${group.name}"?'),
           actions: [
             TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Отмена')),
             TextButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('Удалить')),
@@ -83,7 +102,7 @@ class _GroupsScreenState extends State<GroupsScreen> {
         ),
       );
       return ok ?? false;
-    };
+    }
 
     await showDialog(
       context: context,
@@ -91,62 +110,132 @@ class _GroupsScreenState extends State<GroupsScreen> {
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
         child: Padding(
           padding: const EdgeInsets.all(16),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              const Text('Редактирование группы', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
-              const SizedBox(height: 12),
-              Row(children: [
-                Expanded(child: TextField(controller: name, decoration: const InputDecoration(labelText: 'Название'))),
-                const SizedBox(width: 12),
-                Expanded(child: TextField(controller: specialty, decoration: const InputDecoration(labelText: 'Специальность'))),
-              ]),
-              const SizedBox(height: 12),
-              Row(children: [
-                Expanded(child: TextField(controller: curator, decoration: const InputDecoration(labelText: 'Куратор'))),
-                const SizedBox(width: 12),
-                Expanded(child: TextField(controller: size, decoration: const InputDecoration(labelText: 'Количество'), keyboardType: TextInputType.number)),
-              ]),
-              const SizedBox(height: 12),
-              Row(children: [
-                Expanded(child: TextField(controller: course, decoration: const InputDecoration(labelText: 'Курс'), keyboardType: TextInputType.number)),
-                const Expanded(child: SizedBox()),
-              ]),
-              const SizedBox(height: 16),
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  OutlinedButton(
-                    style: OutlinedButton.styleFrom(foregroundColor: Colors.red),
-                    onPressed: () async {
-                      if (await confirmDelete()) {
-                        Navigator.pop(ctx);
-                        if (g.id != null) await _repo.delete(g.id!);
-                        await _init();
-                      }
-                    },
-                    child: const Text('Удалить'),
-                  ),
-                  ElevatedButton(
-                    onPressed: () {
-                      g.name = name.text.trim();
-                      g.curator = curator.text.trim().isEmpty ? null : curator.text.trim();
-                      g.size = int.tryParse(size.text.trim());
-                      g.course = int.tryParse(course.text.trim());
-                      g.specialty = specialty.text.trim().isEmpty ? null : specialty.text.trim();
-                      Navigator.pop(ctx);
-                    },
-                    child: const Text('Сохранить'),
-                  )
-                ],
-              )
-            ],
+          child: StatefulBuilder(
+            builder: (context, setStateDialog) {
+              return SingleChildScrollView(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text('Редактирование группы', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+                    const SizedBox(height: 12),
+                    Row(
+                      children: [
+                        Expanded(child: TextField(controller: name, decoration: const InputDecoration(labelText: 'Название'))),
+                        const SizedBox(width: 12),
+                        Expanded(child: TextField(controller: speciality, decoration: const InputDecoration(labelText: 'Специальность'))),
+                      ],
+                    ),
+                    const SizedBox(height: 12),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: DropdownButtonFormField<int?>(
+                            value: curatorId,
+                            decoration: const InputDecoration(labelText: 'Куратор'),
+                            items: [
+                              const DropdownMenuItem<int?>(value: null, child: Text('Не назначен')),
+                              ..._teachers
+                                  .where((t) => t.id != null)
+                                  .map(
+                                    (t) => DropdownMenuItem<int?>(value: t.id, child: Text(t.fullName)),
+                                  ),
+                            ],
+                            onChanged: (val) => setStateDialog(() => curatorId = val),
+                          ),
+                        ),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: TextField(
+                            controller: studentCount,
+                            decoration: const InputDecoration(labelText: 'Кол-во студентов'),
+                            keyboardType: TextInputType.number,
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 12),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: TextField(
+                            controller: course,
+                            decoration: const InputDecoration(labelText: 'Курс'),
+                            keyboardType: TextInputType.number,
+                          ),
+                        ),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: TextField(
+                            controller: department,
+                            decoration: const InputDecoration(labelText: 'Кафедра'),
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 16),
+                    const Text('Предметы'),
+                    const SizedBox(height: 8),
+                    Wrap(
+                      spacing: 8,
+                      runSpacing: 8,
+                      children: _subjects.map((subject) {
+                        final selected = subject.id != null && selectedSubjects.contains(subject.id);
+                        return FilterChip(
+                          label: Text(subject.name),
+                          selected: selected,
+                          onSelected: (val) {
+                            setStateDialog(() {
+                              if (subject.id == null) return;
+                              if (val) {
+                                selectedSubjects.add(subject.id!);
+                              } else {
+                                selectedSubjects.remove(subject.id);
+                              }
+                            });
+                          },
+                        );
+                      }).toList(),
+                    ),
+                    const SizedBox(height: 16),
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        OutlinedButton(
+                          style: OutlinedButton.styleFrom(foregroundColor: Colors.red),
+                          onPressed: () async {
+                            if (await confirmDelete()) {
+                              Navigator.pop(ctx);
+                              if (group.id != null) await _groupsRepo.delete(group.id!);
+                              await _init();
+                            }
+                          },
+                          child: const Text('Удалить'),
+                        ),
+                        ElevatedButton(
+                          onPressed: () {
+                            group.name = name.text.trim();
+                            group.speciality = speciality.text.trim().isEmpty ? null : speciality.text.trim();
+                            group.department = department.text.trim().isEmpty ? null : department.text.trim();
+                            group.curatorId = curatorId;
+                            group.studentCount = int.tryParse(studentCount.text.trim());
+                            group.course = int.tryParse(course.text.trim());
+                            group.subjectIds = selectedSubjects.toList();
+                            Navigator.pop(ctx);
+                          },
+                          child: const Text('Сохранить'),
+                        ),
+                      ],
+                    )
+                  ],
+                ),
+              );
+            },
           ),
         ),
       ),
     );
-    await _repo.update(g);
+    await _groupsRepo.update(group);
     await _init();
   }
 
@@ -227,4 +316,3 @@ class _GroupsScreenState extends State<GroupsScreen> {
     );
   }
 }
-

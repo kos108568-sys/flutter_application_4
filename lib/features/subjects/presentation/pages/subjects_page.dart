@@ -1,22 +1,22 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_application_4/core/widgets/sidebar_menu.dart';
-import '../../data/discipline_model.dart';
-import '../../data/disciplines_repository.dart';
-import '../widgets/discipline_card.dart';
-import '../widgets/discipline_filter_bar.dart';
-import '../widgets/recent_disciplines_widget.dart';
+import '../../data/subject_model.dart';
+import '../../data/subjects_repository.dart';
+import '../widgets/recent_subjects_widget.dart';
+import '../widgets/subject_card.dart';
+import '../widgets/subject_filter_bar.dart';
 
-class DisciplinesPage extends StatefulWidget {
-  const DisciplinesPage({super.key});
+class SubjectsPage extends StatefulWidget {
+  const SubjectsPage({super.key});
 
   @override
-  State<DisciplinesPage> createState() => _DisciplinesPageState();
+  State<SubjectsPage> createState() => _SubjectsPageState();
 }
 
-class _DisciplinesPageState extends State<DisciplinesPage> {
-  final _repo = DisciplinesRepository();
-  List<DisciplineModel> all = [];
-  List<DisciplineModel> filtered = [];
+class _SubjectsPageState extends State<SubjectsPage> {
+  final _repo = SubjectsRepository();
+  List<SubjectModel> all = [];
+  List<SubjectModel> filtered = [];
   bool isGrid = true;
 
   @override
@@ -38,8 +38,9 @@ class _DisciplinesPageState extends State<DisciplinesPage> {
   void _onFilterChanged(String q) {
     setState(() {
       filtered = all
-          .where((e) => e.name.toLowerCase().contains(q.toLowerCase()) ||
-              e.teacher.toLowerCase().contains(q.toLowerCase()))
+          .where((e) =>
+              e.name.toLowerCase().contains(q.toLowerCase()) ||
+              e.semester.toLowerCase().contains(q.toLowerCase()))
           .toList();
     });
   }
@@ -47,8 +48,8 @@ class _DisciplinesPageState extends State<DisciplinesPage> {
   void _onSortChanged(String by) {
     setState(() {
       switch (by) {
-        case 'teacher':
-          filtered.sort((a, b) => a.teacher.compareTo(b.teacher));
+        case 'hours':
+          filtered.sort((a, b) => a.hours.compareTo(b.hours));
           break;
         case 'name':
         default:
@@ -59,11 +60,10 @@ class _DisciplinesPageState extends State<DisciplinesPage> {
 
   void _onViewChanged(bool grid) => setState(() => isGrid = grid);
 
-  Future<void> _editDiscipline(DisciplineModel d) async {
-    final name = TextEditingController(text: d.name);
-    final teacher = TextEditingController(text: d.teacher);
-    final group = TextEditingController(text: d.groupCode ?? '');
-    final semester = TextEditingController(text: d.semester?.toString() ?? '');
+  Future<void> _editSubject(SubjectModel subject) async {
+    final name = TextEditingController(text: subject.name);
+    final hours = TextEditingController(text: subject.hours.toString());
+    String semester = subject.semester;
 
     await showDialog(
       context: context,
@@ -75,36 +75,40 @@ class _DisciplinesPageState extends State<DisciplinesPage> {
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              const Text('Редактирование дисциплины',
-                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+              const Text('Редактирование предмета', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
               const SizedBox(height: 12),
               TextField(
                 controller: name,
                 decoration: const InputDecoration(labelText: 'Название'),
               ),
               TextField(
-                controller: teacher,
-                decoration: const InputDecoration(labelText: 'Преподаватель'),
-              ),
-              TextField(
-                controller: group,
-                decoration: const InputDecoration(labelText: 'Группа (например, ПО-42)'),
-              ),
-              TextField(
-                controller: semester,
-                decoration: const InputDecoration(labelText: 'Семестр'),
+                controller: hours,
+                decoration: const InputDecoration(labelText: 'Часы'),
                 keyboardType: TextInputType.number,
+              ),
+              const SizedBox(height: 12),
+              DropdownButtonFormField<String>(
+                value: semester,
+                decoration: const InputDecoration(labelText: 'Семестр'),
+                items: const [
+                  DropdownMenuItem(value: '1', child: Text('1 семестр')),
+                  DropdownMenuItem(value: '2', child: Text('2 семестр')),
+                  DropdownMenuItem(value: 'year', child: Text('Учебный год')),
+                ],
+                onChanged: (value) {
+                  if (value != null) {
+                    semester = value;
+                  }
+                },
               ),
               const SizedBox(height: 16),
               SizedBox(
                 width: double.infinity,
                 child: ElevatedButton(
                   onPressed: () {
-                    d.name = name.text.trim();
-                    d.teacher = teacher.text.trim();
-                    final groupValue = group.text.trim();
-                    d.groupCode = groupValue.isEmpty ? null : groupValue;
-                    d.semester = int.tryParse(semester.text.trim());
+                    subject.name = name.text.trim();
+                    subject.hours = int.tryParse(hours.text.trim()) ?? subject.hours;
+                    subject.semester = semester;
                     Navigator.pop(ctx);
                   },
                   child: const Text('Сохранить'),
@@ -115,7 +119,7 @@ class _DisciplinesPageState extends State<DisciplinesPage> {
         ),
       ),
     );
-    await _repo.update(d);
+    await _repo.update(subject);
     await _init();
   }
 
@@ -126,7 +130,7 @@ class _DisciplinesPageState extends State<DisciplinesPage> {
       body: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const SidebarMenu(selected: 'Дисциплины'),
+          const SidebarMenu(selected: 'Предметы'),
           Expanded(
             flex: 2,
             child: Padding(
@@ -134,10 +138,9 @@ class _DisciplinesPageState extends State<DisciplinesPage> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  const Text('Список дисциплин',
-                      style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold)),
+                  const Text('Управление предметами', style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold)),
                   const SizedBox(height: 16),
-                  DisciplineFilterBar(
+                  SubjectFilterBar(
                     onFilterChanged: _onFilterChanged,
                     onSortChanged: _onSortChanged,
                     onViewChanged: _onViewChanged,
@@ -157,9 +160,9 @@ class _DisciplinesPageState extends State<DisciplinesPage> {
                             itemCount: filtered.length,
                             itemBuilder: (context, i) {
                               final item = filtered[i];
-                              return DisciplineCard(
-                                discipline: item,
-                                onTap: () => _editDiscipline(item),
+                              return SubjectCard(
+                                subject: item,
+                                onTap: () => _editSubject(item),
                               );
                             },
                           )
@@ -168,9 +171,9 @@ class _DisciplinesPageState extends State<DisciplinesPage> {
                             separatorBuilder: (_, __) => const SizedBox(height: 12),
                             itemBuilder: (context, i) {
                               final item = filtered[i];
-                              return DisciplineCard(
-                                discipline: item,
-                                onTap: () => _editDiscipline(item),
+                              return SubjectCard(
+                                subject: item,
+                                onTap: () => _editSubject(item),
                               );
                             },
                           ),
@@ -186,7 +189,7 @@ class _DisciplinesPageState extends State<DisciplinesPage> {
               child: const SingleChildScrollView(
                 child: Column(
                   children: [
-                    RecentDisciplinesWidget(),
+                    RecentSubjectsWidget(),
                   ],
                 ),
               ),
@@ -197,4 +200,3 @@ class _DisciplinesPageState extends State<DisciplinesPage> {
     );
   }
 }
-

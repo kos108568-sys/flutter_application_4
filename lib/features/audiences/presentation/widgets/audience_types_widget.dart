@@ -1,18 +1,21 @@
 import 'package:flutter/material.dart';
+import '../../data/audience_type_model.dart';
 
 class AudienceTypesWidget extends StatelessWidget {
-  const AudienceTypesWidget({super.key});
+  final List<AudienceTypeModel> types;
+
+  const AudienceTypesWidget({super.key, required this.types});
+
+  static const _palette = [
+    Colors.purple,
+    Colors.green,
+    Colors.red,
+    Colors.orange,
+    Colors.blue,
+  ];
 
   @override
   Widget build(BuildContext context) {
-    final types = [
-      {'name': 'Компьютерная', 'color': Colors.purple},
-      {'name': 'Лекционная', 'color': Colors.green},
-      {'name': 'Лаборатория', 'color': Colors.red},
-      {'name': 'Конференц-зал', 'color': Colors.orange},
-      {'name': 'Актовый зал', 'color': Colors.pink},
-    ];
-
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
@@ -34,48 +37,38 @@ class AudienceTypesWidget extends StatelessWidget {
             style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
           ),
           const SizedBox(height: 12),
-
-          // список типов
-          ...types.map((type) {
-            return Padding(
-              padding: const EdgeInsets.symmetric(vertical: 4),
-              child: Row(
-                children: [
-                  Container(
-                    width: 12,
-                    height: 12,
-                    decoration: BoxDecoration(
-                      color: type['color'] as Color,
-                      shape: BoxShape.circle,
+          if (types.isEmpty)
+            const Text('Нет данных', style: TextStyle(color: Colors.grey))
+          else
+            ...types.asMap().entries.map((entry) {
+              final color = _palette[entry.key % _palette.length];
+              final type = entry.value;
+              return Padding(
+                padding: const EdgeInsets.symmetric(vertical: 4),
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Container(
+                      width: 12,
+                      height: 12,
+                      margin: const EdgeInsets.only(top: 5),
+                      decoration: BoxDecoration(color: color, shape: BoxShape.circle),
                     ),
-                  ),
-                  const SizedBox(width: 8),
-                  Text(type['name'] as String),
-                ],
-              ),
-            );
-          }),
-
-          const SizedBox(height: 16),
-          SizedBox(
-            width: double.infinity,
-            child: ElevatedButton.icon(
-              onPressed: () {
-                // TODO: обработка нажатия "Редактировать"
-              },
-              icon: const Icon(Icons.edit, size: 18),
-              label: const Text('Редактировать'),
-              style: ElevatedButton.styleFrom(
-                backgroundColor: Colors.blueAccent,
-                foregroundColor: Colors.white,
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(10),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(type.typeName, style: const TextStyle(fontWeight: FontWeight.w600)),
+                          if (type.description?.isNotEmpty ?? false)
+                            Text(type.description!, style: const TextStyle(color: Colors.grey, fontSize: 12)),
+                        ],
+                      ),
+                    ),
+                  ],
                 ),
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-              ),
-            ),
-          ),
+              );
+            }),
         ],
       ),
     );

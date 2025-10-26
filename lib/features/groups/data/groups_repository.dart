@@ -5,39 +5,62 @@ import 'group_model.dart';
 class GroupsRepository {
   Future<Database> get _db async => DBHelper.instance.database;
 
-  Future<int> insert(GroupModel g) async {
+  Future<int> insert(GroupModel group) async {
     final db = await _db;
-    return db.insert('groups', g.toMap()..remove('id'));
+    final id = await db.insert('groups', group.toMap()..remove('id'));
+    await _replaceSubjects(db, id, group.subjectIds);
+    return id;
   }
 
-  Future<int> update(GroupModel g) async {
-    if (g.id == null) return 0;
+  Future<int> update(GroupModel group) async {
+    if (group.id == null) return 0;
     final db = await _db;
-    return db.update('groups', g.toMap()..remove('id'), where: 'id = ?', whereArgs: [g.id]);
+    final result = await db.update(
+      'groups',
+      group.toMap()..remove('id'),
+      where: 'id = ?',
+      whereArgs: [group.id],
+    );
+    await _replaceSubjects(db, group.id!, group.subjectIds);
+    return result;
   }
 
   Future<int> delete(int id) async {
     final db = await _db;
+    await db.delete('group_subjects', where: 'group_id = ?', whereArgs: [id]);
     return db.delete('groups', where: 'id = ?', whereArgs: [id]);
   }
 
-  Future<List<GroupModel>> getAll({String? search, String orderBy = 'name ASC'}) async {
+  Future<List<GroupModel>> getAll({String? search, String orderBy = 'g.name ASC'}) async {
     final db = await _db;
-    String where = '';
-    List<Object?> args = [];
+    final where = <String>[];
+    final args = <Object?>[];
     if (search != null && search.trim().isNotEmpty) {
-      where = 'WHERE name LIKE ? OR curator LIKE ? OR specialty LIKE ?';
-      final q = '%${search.trim()}%';
-      args = [q, q, q];
+      where.add('(g.name LIKE ? OR IFNULL(g.speciality, "") LIKE ? OR IFNULL(g.department, "") LIKE ? OR IFNULL(t.full_name, "") LIKE ?)');
+      final query = '%${search.trim()}%';
+      args..add(query)..add(query)..add(query)..add(query);
     }
-    final rows = await db.rawQuery('SELECT * FROM groups $where ORDER BY $orderBy', args);
-    return rows.map((e) => GroupModel.fromMap(e)).toList();
+    final whereSql = where.isEmpty ? '' : 'WHERE ${where.join(' AND ')}';
+    final rows = await db.rawQuery('''
+      SELECT g.*, t.full_name AS curator_name
+      FROM groups g
+      LEFT JOIN teachers t ON t.id = g.curator_id
+      $whereSql
+      ORDER BY $orderBy
+    ''', args);
+    return _hydrateGroups(db, rows);
   }
 
   Future<List<GroupModel>> getRecent({int limit = 5}) async {
     final db = await _db;
-    final rows = await db.rawQuery('SELECT * FROM groups ORDER BY id DESC LIMIT ?', [limit]);
-    return rows.map((e) => GroupModel.fromMap(e)).toList();
+    final rows = await db.rawQuery('''
+      SELECT g.*, t.full_name AS curator_name
+      FROM groups g
+      LEFT JOIN teachers t ON t.id = g.curator_id
+      ORDER BY g.id DESC
+      LIMIT ?
+    ''', [limit]);
+    return _hydrateGroups(db, rows);
   }
 
   Future<void> seedIfEmpty() async {
@@ -45,11 +68,46 @@ class GroupsRepository {
     final count = Sqflite.firstIntValue(await db.rawQuery('SELECT COUNT(*) FROM groups')) ?? 0;
     if (count > 0) return;
     final samples = [
-      GroupModel(name: 'ПО-42', size: 30, curator: 'И. И. Иванов', course: 2, specialty: 'Программная инженерия', disciplineIds: []),
-      GroupModel(name: 'ПО-41', size: 28, curator: 'П. П. Петров', course: 2, specialty: 'Программная инженерия', disciplineIds: []),
+      GroupModel(name: 'ПО-42', studentCount: 30, course: 2, speciality: 'Программная инженерия', department: 'ИТ', subjectIds: const []),
+      GroupModel(name: 'ПО-41', studentCount: 28, course: 2, speciality: 'Программная инженерия', department: 'ИТ', subjectIds: const []),
     ];
-    for (final g in samples) {
-      await insert(g);
+    for (final group in samples) {
+      await insert(group);
     }
+  }
+
+  Future<void> _replaceSubjects(Database db, int groupId, List<int> subjectIds) async {
+    await db.delete('group_subjects', where: 'group_id = ?', whereArgs: [groupId]);
+    final ids = subjectIds.toSet().where((id) => id > 0);
+    for (final subjectId in ids) {
+      await db.insert('group_subjects', {'group_id': groupId, 'subject_id': subjectId});
+    }
+  }
+
+  Future<List<GroupModel>> _hydrateGroups(Database db, List<Map<String, Object?>> rows) async {
+    final groupIds = rows.map((row) => row['id']).whereType<int>().toList();
+    final subjectsMap = await _subjectsByGroup(db, groupIds);
+    return rows
+        .map((row) => GroupModel.fromMap(
+              row,
+              subjectIds: subjectsMap[row['id']] ?? const <int>[],
+            ))
+        .toList();
+  }
+
+  Future<Map<int, List<int>>> _subjectsByGroup(Database db, List<int> groupIds) async {
+    if (groupIds.isEmpty) return {};
+    final placeholders = List.filled(groupIds.length, '?').join(',');
+    final rows = await db.rawQuery(
+      'SELECT group_id, subject_id FROM group_subjects WHERE group_id IN ($placeholders)',
+      groupIds,
+    );
+    final map = <int, List<int>>{};
+    for (final row in rows) {
+      final groupId = row['group_id'] as int;
+      final subjectId = row['subject_id'] as int;
+      map.putIfAbsent(groupId, () => <int>[]).add(subjectId);
+    }
+    return map;
   }
 }

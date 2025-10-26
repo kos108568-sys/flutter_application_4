@@ -69,7 +69,7 @@ class _RecentGroupsWidgetState extends State<RecentGroupsWidget> {
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Text(g.name, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontWeight: FontWeight.w600)),
-                        Text('Куратор: ${g.curator ?? '-'}', maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(color: Colors.grey)),
+                        Text('Куратор: ${g.curatorName ?? '-'}', maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(color: Colors.grey)),
                       ],
                     ),
                   ),
@@ -102,15 +102,15 @@ class _AddGroupDialogState extends State<_AddGroupDialog> {
   final _formKey = GlobalKey<FormState>();
   final _name = TextEditingController();
   final _size = TextEditingController();
-  final _curator = TextEditingController();
   final _course = TextEditingController();
   final _specialty = TextEditingController();
+  final _department = TextEditingController();
 
   @override
   void dispose() {
     _name.dispose();
     _size.dispose();
-    _curator.dispose();
+    _department.dispose();
     _course.dispose();
     _specialty.dispose();
     super.dispose();
@@ -120,11 +120,11 @@ class _AddGroupDialogState extends State<_AddGroupDialog> {
     if (!_formKey.currentState!.validate()) return;
     final model = GroupModel(
       name: _name.text.trim(),
-      size: int.tryParse(_size.text.trim()),
-      curator: _curator.text.trim().isEmpty ? null : _curator.text.trim(),
+      studentCount: int.tryParse(_size.text.trim()),
       course: int.tryParse(_course.text.trim()),
-      specialty: _specialty.text.trim().isEmpty ? null : _specialty.text.trim(),
-      disciplineIds: const [],
+      speciality: _specialty.text.trim().isEmpty ? null : _specialty.text.trim(),
+      department: _department.text.trim().isEmpty ? null : _department.text.trim(),
+      subjectIds: const [],
     );
     Navigator.of(context).pop(model);
   }
@@ -153,8 +153,8 @@ class _AddGroupDialogState extends State<_AddGroupDialog> {
                 decoration: const InputDecoration(labelText: 'Специальность'),
               ),
               TextFormField(
-                controller: _curator,
-                decoration: const InputDecoration(labelText: 'Куратор'),
+                controller: _department,
+                decoration: const InputDecoration(labelText: 'Кафедра'),
               ),
               Row(children: [
                 Expanded(

@@ -1,17 +1,17 @@
 import 'package:flutter/material.dart';
-import '../../data/discipline_model.dart';
-import '../../data/disciplines_repository.dart';
+import '../../data/subject_model.dart';
+import '../../data/subjects_repository.dart';
 
-class RecentDisciplinesWidget extends StatefulWidget {
-  const RecentDisciplinesWidget({super.key});
+class RecentSubjectsWidget extends StatefulWidget {
+  const RecentSubjectsWidget({super.key});
 
   @override
-  State<RecentDisciplinesWidget> createState() => _RecentDisciplinesWidgetState();
+  State<RecentSubjectsWidget> createState() => _RecentSubjectsWidgetState();
 }
 
-class _RecentDisciplinesWidgetState extends State<RecentDisciplinesWidget> {
-  final _repo = DisciplinesRepository();
-  List<DisciplineModel> _items = [];
+class _RecentSubjectsWidgetState extends State<RecentSubjectsWidget> {
+  final _repo = SubjectsRepository();
+  List<SubjectModel> _items = [];
 
   @override
   void initState() {
@@ -31,9 +31,9 @@ class _RecentDisciplinesWidgetState extends State<RecentDisciplinesWidget> {
   }
 
   Future<void> _openAddModal() async {
-    final result = await showDialog<DisciplineModel>(
+    final result = await showDialog<SubjectModel>(
       context: context,
-      builder: (ctx) => const _AddDisciplineDialog(),
+      builder: (ctx) => const _AddSubjectDialog(),
     );
     if (result != null) {
       await _repo.insert(result);
@@ -59,9 +59,9 @@ class _RecentDisciplinesWidgetState extends State<RecentDisciplinesWidget> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Text('Новые дисциплины', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+          const Text('Последние предметы', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
           const SizedBox(height: 16),
-          for (final d in _items)
+          for (final subject in _items)
             Padding(
               padding: const EdgeInsets.only(bottom: 10),
               child: Row(
@@ -72,12 +72,11 @@ class _RecentDisciplinesWidgetState extends State<RecentDisciplinesWidget> {
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Text(d.name, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontWeight: FontWeight.w600)),
-                        Text(d.teacher, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(color: Colors.grey)),
+                        Text(subject.name, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontWeight: FontWeight.w600)),
+                        Text('Семестр: ${subject.semester}', maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(color: Colors.grey)),
                       ],
                     ),
                   ),
-                  const Icon(Icons.edit_outlined, size: 18, color: Colors.grey),
                 ],
               ),
             ),
@@ -96,35 +95,32 @@ class _RecentDisciplinesWidgetState extends State<RecentDisciplinesWidget> {
   }
 }
 
-class _AddDisciplineDialog extends StatefulWidget {
-  const _AddDisciplineDialog();
+class _AddSubjectDialog extends StatefulWidget {
+  const _AddSubjectDialog();
+
   @override
-  State<_AddDisciplineDialog> createState() => _AddDisciplineDialogState();
+  State<_AddSubjectDialog> createState() => _AddSubjectDialogState();
 }
 
-class _AddDisciplineDialogState extends State<_AddDisciplineDialog> {
+class _AddSubjectDialogState extends State<_AddSubjectDialog> {
   final _formKey = GlobalKey<FormState>();
   final _name = TextEditingController();
-  final _teacher = TextEditingController();
-  final _group = TextEditingController();
-  final _semester = TextEditingController();
+  final _hours = TextEditingController();
+  String _semester = '1';
 
   @override
   void dispose() {
     _name.dispose();
-    _teacher.dispose();
-    _group.dispose();
-    _semester.dispose();
+    _hours.dispose();
     super.dispose();
   }
 
   void _submit() {
     if (!_formKey.currentState!.validate()) return;
-    final model = DisciplineModel(
+    final model = SubjectModel(
       name: _name.text.trim(),
-      teacher: _teacher.text.trim(),
-      groupCode: _group.text.trim().isEmpty ? null : _group.text.trim(),
-      semester: int.tryParse(_semester.text.trim()),
+      hours: int.tryParse(_hours.text.trim()) ?? 0,
+      semester: _semester,
     );
     Navigator.of(context).pop(model);
   }
@@ -141,25 +137,30 @@ class _AddDisciplineDialogState extends State<_AddDisciplineDialog> {
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              const Text('Новая дисциплина', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+              const Text('Новый предмет', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
               const SizedBox(height: 12),
               TextFormField(
                 controller: _name,
                 decoration: const InputDecoration(labelText: 'Название'),
-                validator: (v) => v == null || v.trim().isEmpty ? 'Укажите название' : null,
+                validator: (v) => v == null || v.trim().isEmpty ? 'Название обязательно' : null,
               ),
               TextFormField(
-                controller: _teacher,
-                decoration: const InputDecoration(labelText: 'Преподаватель'),
-              ),
-              TextFormField(
-                controller: _group,
-                decoration: const InputDecoration(labelText: 'Группа (опционально)'),
-              ),
-              TextFormField(
-                controller: _semester,
-                decoration: const InputDecoration(labelText: 'Семестр (опционально)'),
+                controller: _hours,
+                decoration: const InputDecoration(labelText: 'Количество часов'),
                 keyboardType: TextInputType.number,
+              ),
+              const SizedBox(height: 12),
+              DropdownButtonFormField<String>(
+                value: _semester,
+                items: const [
+                  DropdownMenuItem(value: '1', child: Text('1 семестр')),
+                  DropdownMenuItem(value: '2', child: Text('2 семестр')),
+                  DropdownMenuItem(value: 'year', child: Text('Учебный год')),
+                ],
+                onChanged: (value) {
+                  if (value != null) setState(() => _semester = value);
+                },
+                decoration: const InputDecoration(labelText: 'Семестр'),
               ),
               const SizedBox(height: 16),
               SizedBox(
@@ -173,4 +174,3 @@ class _AddDisciplineDialogState extends State<_AddDisciplineDialog> {
     );
   }
 }
-

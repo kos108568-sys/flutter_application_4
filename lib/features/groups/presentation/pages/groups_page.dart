@@ -1,9 +1,11 @@
 import 'package:flutter/material.dart';
-import '../../../disciplines/data/discipline_model.dart';
-import '../../../disciplines/data/disciplines_repository.dart';
+import '../../../../core/widgets/sidebar_menu.dart';
+import '../../../subjects/data/subject_model.dart';
+import '../../../subjects/data/subjects_repository.dart';
+import '../../../teachers/data/teacher_model.dart';
+import '../../../teachers/data/teachers_repository.dart';
 import '../../data/group_model.dart';
 import '../../data/groups_repository.dart';
-import '../../../../core/widgets/sidebar_menu.dart';
 
 class GroupsPage extends StatefulWidget {
   const GroupsPage({super.key});
@@ -14,16 +16,19 @@ class GroupsPage extends StatefulWidget {
 
 class _GroupsPageState extends State<GroupsPage> {
   final _groupsRepo = GroupsRepository();
-  final _discRepo = DisciplinesRepository();
+  final _subjectsRepo = SubjectsRepository();
+  final _teachersRepo = TeachersRepository();
 
   final _nameCtrl = TextEditingController();
   final _sizeCtrl = TextEditingController();
-  final _curatorCtrl = TextEditingController();
   final _courseCtrl = TextEditingController();
   final _specialtyCtrl = TextEditingController();
+  final _departmentCtrl = TextEditingController();
 
-  List<DisciplineModel> _allDisc = [];
-  final Set<int> _selectedDiscIds = {};
+  List<SubjectModel> _subjects = [];
+  List<TeacherModel> _teachers = [];
+  final Set<int> _selectedSubjectIds = {};
+  int? _curatorId;
 
   @override
   void initState() {
@@ -32,38 +37,46 @@ class _GroupsPageState extends State<GroupsPage> {
   }
 
   Future<void> _load() async {
-    final allDisc = await _discRepo.getAll(orderBy: 'name ASC');
+    final subjects = await _subjectsRepo.getAll(orderBy: 'name ASC');
+    final teachers = await _teachersRepo.getAll(orderBy: 'full_name ASC');
     if (!mounted) return;
-    setState(() => _allDisc = allDisc);
+    setState(() {
+      _subjects = subjects;
+      _teachers = teachers;
+    });
   }
 
   Future<void> _save() async {
     final model = GroupModel(
       name: _nameCtrl.text.trim(),
-      size: int.tryParse(_sizeCtrl.text.trim()),
-      curator: _curatorCtrl.text.trim().isEmpty ? null : _curatorCtrl.text.trim(),
+      studentCount: int.tryParse(_sizeCtrl.text.trim()),
       course: int.tryParse(_courseCtrl.text.trim()),
-      specialty: _specialtyCtrl.text.trim().isEmpty ? null : _specialtyCtrl.text.trim(),
-      disciplineIds: _selectedDiscIds.toList(),
+      speciality: _specialtyCtrl.text.trim().isEmpty ? null : _specialtyCtrl.text.trim(),
+      department: _departmentCtrl.text.trim().isEmpty ? null : _departmentCtrl.text.trim(),
+      curatorId: _curatorId,
+      subjectIds: _selectedSubjectIds.toList(),
     );
     await _groupsRepo.insert(model);
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Группа сохранена')));
     _nameCtrl.clear();
     _sizeCtrl.clear();
-    _curatorCtrl.clear();
     _courseCtrl.clear();
     _specialtyCtrl.clear();
-    setState(() => _selectedDiscIds.clear());
+    _departmentCtrl.clear();
+    setState(() {
+      _selectedSubjectIds.clear();
+      _curatorId = null;
+    });
   }
 
   @override
   void dispose() {
     _nameCtrl.dispose();
     _sizeCtrl.dispose();
-    _curatorCtrl.dispose();
     _courseCtrl.dispose();
     _specialtyCtrl.dispose();
+    _departmentCtrl.dispose();
     super.dispose();
   }
 
@@ -118,9 +131,16 @@ class _GroupsPageState extends State<GroupsPage> {
                     Row(
                       children: [
                         Expanded(
-                          child: TextField(
-                            controller: _curatorCtrl,
-                            decoration: const InputDecoration(labelText: 'Куратор'),
+                          child: DropdownButtonFormField<int?>(
+                            value: _curatorId,
+                            decoration: const InputDecoration(labelText: 'Куратор (преподаватель)'),
+                            items: [
+                              const DropdownMenuItem<int?>(value: null, child: Text('Не назначен')),
+                              ..._teachers
+                                  .where((t) => t.id != null)
+                                  .map((t) => DropdownMenuItem<int?>(value: t.id, child: Text(t.fullName)))
+                            ],
+                            onChanged: (value) => setState(() => _curatorId = value),
                           ),
                         ),
                         const SizedBox(width: 16),
@@ -128,7 +148,7 @@ class _GroupsPageState extends State<GroupsPage> {
                           child: TextField(
                             controller: _sizeCtrl,
                             keyboardType: TextInputType.number,
-                            decoration: const InputDecoration(labelText: 'Количество человек'),
+                            decoration: const InputDecoration(labelText: 'Количество студентов'),
                           ),
                         ),
                       ],
@@ -144,28 +164,33 @@ class _GroupsPageState extends State<GroupsPage> {
                           ),
                         ),
                         const SizedBox(width: 16),
-                        const Expanded(child: SizedBox()),
+                        Expanded(
+                          child: TextField(
+                            controller: _departmentCtrl,
+                            decoration: const InputDecoration(labelText: 'Кафедра'),
+                          ),
+                        ),
                       ],
                     ),
                     const SizedBox(height: 16),
-                    const Text('Дисциплины', style: TextStyle(fontWeight: FontWeight.w600)),
+                    const Text('Предметы', style: TextStyle(fontWeight: FontWeight.w600)),
                     const SizedBox(height: 8),
                     Wrap(
                       spacing: 8,
                       runSpacing: 8,
-                      children: _allDisc.map((d) {
-                        final selected = d.id != null && _selectedDiscIds.contains(d.id);
+                      children: _subjects.map((subject) {
+                        final selected = subject.id != null && _selectedSubjectIds.contains(subject.id);
                         return FilterChip(
-                          label: Text(d.name),
+                          label: Text(subject.name),
                           selected: selected,
                           selectedColor: Colors.blue.shade100,
                           onSelected: (val) {
                             setState(() {
-                              if (d.id == null) return;
+                              if (subject.id == null) return;
                               if (val) {
-                                _selectedDiscIds.add(d.id!);
+                                _selectedSubjectIds.add(subject.id!);
                               } else {
-                                _selectedDiscIds.remove(d.id);
+                                _selectedSubjectIds.remove(subject.id);
                               }
                             });
                           },
@@ -177,9 +202,7 @@ class _GroupsPageState extends State<GroupsPage> {
                       mainAxisAlignment: MainAxisAlignment.end,
                       children: [
                         TextButton(
-                          onPressed: () {
-                            Navigator.maybePop(context);
-                          },
+                          onPressed: () => Navigator.maybePop(context),
                           child: const Text('Отмена'),
                         ),
                         const SizedBox(width: 12),
@@ -199,4 +222,3 @@ class _GroupsPageState extends State<GroupsPage> {
     );
   }
 }
-

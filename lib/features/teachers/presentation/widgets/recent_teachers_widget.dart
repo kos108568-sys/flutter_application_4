@@ -107,7 +107,7 @@ class _AddTeacherDialogState extends State<_AddTeacherDialog> {
 
   void _submit() {
     if (!_formKey.currentState!.validate()) return;
-    final model = TeacherModel(fullName: _fullName.text.trim(), curatorGroupId: null, disciplineIds: const [], audienceIds: const []);
+    final model = TeacherModel(fullName: _fullName.text.trim());
     Navigator.of(context).pop(model);
   }
 

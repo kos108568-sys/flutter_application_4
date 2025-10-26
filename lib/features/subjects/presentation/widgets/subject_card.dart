@@ -1,10 +1,10 @@
 import 'package:flutter/material.dart';
-import '../../data/discipline_model.dart';
+import '../../data/subject_model.dart';
 
-class DisciplineCard extends StatelessWidget {
-  final DisciplineModel discipline;
+class SubjectCard extends StatelessWidget {
+  final SubjectModel subject;
   final VoidCallback? onTap;
-  const DisciplineCard({super.key, required this.discipline, this.onTap});
+  const SubjectCard({super.key, required this.subject, this.onTap});
 
   @override
   Widget build(BuildContext context) {
@@ -27,7 +27,7 @@ class DisciplineCard extends StatelessWidget {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Text(
-              discipline.name,
+              subject.name,
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
               style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w700),
@@ -35,18 +35,23 @@ class DisciplineCard extends StatelessWidget {
             const SizedBox(height: 8),
             Row(
               children: [
-                const Icon(Icons.person, size: 14, color: Colors.grey),
+                const Icon(Icons.schedule, size: 14, color: Colors.grey),
                 const SizedBox(width: 6),
                 Expanded(
                   child: Text(
-                    discipline.teacher,
+                    'Семестр: ${subject.semester}',
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                     style: const TextStyle(color: Colors.grey),
                   ),
                 ),
               ],
-            )
+            ),
+            const SizedBox(height: 6),
+            Text(
+              'Всего часов: ${subject.hours}',
+              style: const TextStyle(color: Colors.grey),
+            ),
           ],
         ),
       ),

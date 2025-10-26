@@ -3,45 +3,47 @@ import 'dart:convert';
 class AudiencesItemModel {
   int? id;
   String name;
-  String type;
   int capacity;
-  String boss;
+  int typeId;
+  String? typeName;
+  int? headTeacherId;
+  String? headTeacherName;
   String? building;
-  List<String> equipment;
+  List<String> equipmentList;
 
   AudiencesItemModel({
     this.id,
     required this.name,
-    required this.type,
     required this.capacity,
-    required this.boss,
+    required this.typeId,
+    this.typeName,
+    this.headTeacherId,
+    this.headTeacherName,
     this.building,
-    required this.equipment,
-  });
+    List<String>? equipmentList,
+  }) : equipmentList = equipmentList ?? <String>[];
 
-  Map<String, dynamic> toMap() {
-    return {
-      'id': id,
-      'name': name,
-      'type': type,
-      'capacity': capacity,
-      'boss': boss,
-      'building': building,
-      'equipment': jsonEncode(equipment),
-    };
-  }
+  Map<String, dynamic> toMap() => {
+        'id': id,
+        'name': name,
+        'capacity': capacity,
+        'type_id': typeId,
+        'head_teacher_id': headTeacherId,
+        'building': building,
+        'equipment_list': jsonEncode(equipmentList),
+      };
 
-  factory AudiencesItemModel.fromMap(Map<String, dynamic> map) {
-    return AudiencesItemModel(
-      id: map['id'] as int?,
-      name: map['name'] as String,
-      type: map['type'] as String,
-      capacity: (map['capacity'] as num).toInt(),
-      boss: (map['boss'] as String?) ?? '',
-      building: map['building'] as String?,
-      equipment: _parseEquipment(map['equipment']),
-    );
-  }
+  factory AudiencesItemModel.fromMap(Map<String, dynamic> map) => AudiencesItemModel(
+        id: map['id'] as int?,
+        name: map['name'] as String,
+        capacity: (map['capacity'] as num).toInt(),
+        typeId: (map['type_id'] as num).toInt(),
+        typeName: map['type_name'] as String?,
+        headTeacherId: map['head_teacher_id'] as int?,
+        headTeacherName: map['head_teacher_name'] as String?,
+        building: map['building'] as String?,
+        equipmentList: _parseEquipment(map['equipment_list']),
+      );
 
   static List<String> _parseEquipment(dynamic value) {
     if (value == null) return <String>[];
@@ -52,7 +54,6 @@ class AudiencesItemModel {
           return decoded.map((e) => e?.toString() ?? '').where((e) => e.isNotEmpty).toList();
         }
       } catch (_) {
-        // fallback: comma separated
         return value
             .split(',')
             .map((e) => e.trim())

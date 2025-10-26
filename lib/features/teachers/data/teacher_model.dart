@@ -1,16 +1,18 @@
 class TeacherModel {
   int? id;
   String fullName;
-  int? curatorGroupId;
-  List<int> disciplineIds;
+  List<int> curatorGroupIds;
+  List<int> subjectIds;
   List<int> audienceIds;
 
   TeacherModel({
     this.id,
     required this.fullName,
-    this.curatorGroupId,
-    required this.disciplineIds,
-    required this.audienceIds,
-  });
+    List<int>? curatorGroupIds,
+    List<int>? subjectIds,
+    List<int>? audienceIds,
+  })  : curatorGroupIds = curatorGroupIds ?? <int>[],
+        subjectIds = subjectIds ?? <int>[],
+        audienceIds = audienceIds ?? <int>[];
 }
 

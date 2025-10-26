@@ -1,105 +1,108 @@
 import 'package:sqflite/sqflite.dart';
 import '../../../core/db/db_helper.dart';
 import '../../groups/data/group_model.dart';
-import '../../disciplines/data/discipline_model.dart';
+import '../../subjects/data/subject_model.dart';
 import '../../audiences/data/audiences_item_model.dart';
 import 'teacher_model.dart';
 
 class TeachersRepository {
   Future<Database> get _db async => DBHelper.instance.database;
 
-  Future<int> insert(TeacherModel t) async {
+  Future<int> insert(TeacherModel teacher) async {
     final db = await _db;
-    final id = await db.insert('teachers', {
-      'full_name': t.fullName,
-      'curator_group_id': t.curatorGroupId
-    });
-    await _replaceLinks(db, id, t.disciplineIds, t.audienceIds);
+    final id = await db.insert('teachers', {'full_name': teacher.fullName});
+    await _replaceSubjects(db, id, teacher.subjectIds);
+    await _assignCuratedGroups(db, id, teacher.curatorGroupIds);
+    await _assignAudiences(db, id, teacher.audienceIds);
     return id;
   }
 
-  Future<int> update(TeacherModel t) async {
-    if (t.id == null) return 0;
+  Future<int> update(TeacherModel teacher) async {
+    if (teacher.id == null) return 0;
     final db = await _db;
-    final res = await db.update('teachers', {
-      'full_name': t.fullName,
-      'curator_group_id': t.curatorGroupId
-    }, where: 'id = ?', whereArgs: [t.id]);
-    await _replaceLinks(db, t.id!, t.disciplineIds, t.audienceIds);
-    return res;
-  }
-
-  Future<void> _replaceLinks(Database db, int teacherId, List<int> discIds, List<int> audIds) async {
-    await db.delete('teacher_disciplines', where: 'teacher_id = ?', whereArgs: [teacherId]);
-    await db.delete('teacher_audiences', where: 'teacher_id = ?', whereArgs: [teacherId]);
-    for (final d in discIds) {
-      await db.insert('teacher_disciplines', {'teacher_id': teacherId, 'discipline_id': d});
-    }
-    for (final a in audIds) {
-      await db.insert('teacher_audiences', {'teacher_id': teacherId, 'audience_id': a});
-    }
+    final result = await db.update(
+      'teachers',
+      {'full_name': teacher.fullName},
+      where: 'id = ?',
+      whereArgs: [teacher.id],
+    );
+    await _replaceSubjects(db, teacher.id!, teacher.subjectIds);
+    await _assignCuratedGroups(db, teacher.id!, teacher.curatorGroupIds);
+    await _assignAudiences(db, teacher.id!, teacher.audienceIds);
+    return result;
   }
 
   Future<int> delete(int id) async {
     final db = await _db;
-    await db.delete('teacher_disciplines', where: 'teacher_id = ?', whereArgs: [id]);
-    await db.delete('teacher_audiences', where: 'teacher_id = ?', whereArgs: [id]);
+    await db.delete('teacher_subjects', where: 'teacher_id = ?', whereArgs: [id]);
+    await db.update('groups', {'curator_id': null}, where: 'curator_id = ?', whereArgs: [id]);
+    await db.update('audiences', {'head_teacher_id': null}, where: 'head_teacher_id = ?', whereArgs: [id]);
     return db.delete('teachers', where: 'id = ?', whereArgs: [id]);
   }
 
   Future<List<TeacherModel>> getAll({String? search, String orderBy = 'full_name ASC'}) async {
     final db = await _db;
-    String where = '';
-    List<Object?> args = [];
+    final where = <String>[];
+    final args = <Object?>[];
     if (search != null && search.trim().isNotEmpty) {
-      where = 'WHERE full_name LIKE ?';
-      args = ['%${search.trim()}%'];
+      where.add('full_name LIKE ?');
+      args.add('%${search.trim()}%');
     }
-    final rows = await db.rawQuery('SELECT * FROM teachers $where ORDER BY $orderBy', args);
-    final List<TeacherModel> list = [];
-    for (final r in rows) {
-      final id = (r['id'] as int);
-      final discRows = await db.rawQuery('SELECT discipline_id FROM teacher_disciplines WHERE teacher_id = ?', [id]);
-      final audRows = await db.rawQuery('SELECT audience_id FROM teacher_audiences WHERE teacher_id = ?', [id]);
-      list.add(TeacherModel(
-        id: id,
-        fullName: (r['full_name'] as String),
-        curatorGroupId: r['curator_group_id'] as int?,
-        disciplineIds: discRows.map((e) => (e['discipline_id'] as int)).toList(),
-        audienceIds: audRows.map((e) => (e['audience_id'] as int)).toList(),
-      ));
-    }
-    return list;
+    final whereSql = where.isEmpty ? '' : 'WHERE ${where.join(' AND ')}';
+    final rows = await db.rawQuery('SELECT * FROM teachers $whereSql ORDER BY $orderBy', args);
+    return _rowsToTeachers(db, rows);
   }
 
   Future<List<TeacherModel>> getRecent({int limit = 5}) async {
     final db = await _db;
     final rows = await db.rawQuery('SELECT * FROM teachers ORDER BY id DESC LIMIT ?', [limit]);
-    return rows.map((r) => TeacherModel(
-      id: r['id'] as int?,
-      fullName: r['full_name'] as String,
-      curatorGroupId: r['curator_group_id'] as int?,
-      disciplineIds: const [],
-      audienceIds: const [],
-    )).toList();
+    return _rowsToTeachers(db, rows);
   }
 
-  // Helpers to populate selections
+  Future<List<TeacherModel>> _rowsToTeachers(Database db, List<Map<String, Object?>> rows) async {
+    final list = <TeacherModel>[];
+    for (final row in rows) {
+      final id = row['id'] as int;
+      final subjects = await db.rawQuery('SELECT subject_id FROM teacher_subjects WHERE teacher_id = ?', [id]);
+      final groups = await db.rawQuery('SELECT id FROM groups WHERE curator_id = ?', [id]);
+      final audiences = await db.rawQuery('SELECT id FROM audiences WHERE head_teacher_id = ?', [id]);
+      list.add(TeacherModel(
+        id: id,
+        fullName: row['full_name'] as String,
+        subjectIds: subjects.map((e) => (e['subject_id'] as int)).toList(),
+        curatorGroupIds: groups.map((e) => (e['id'] as int)).toList(),
+        audienceIds: audiences.map((e) => (e['id'] as int)).toList(),
+      ));
+    }
+    return list;
+  }
+
   Future<List<GroupModel>> groups() async {
     final db = await _db;
-    final rows = await db.rawQuery('SELECT * FROM groups ORDER BY name ASC');
+    final rows = await db.rawQuery('''
+      SELECT g.*, t.full_name AS curator_name
+      FROM groups g
+      LEFT JOIN teachers t ON t.id = g.curator_id
+      ORDER BY g.name ASC
+    ''');
     return rows.map((e) => GroupModel.fromMap(e)).toList();
   }
 
-  Future<List<DisciplineModel>> disciplines() async {
+  Future<List<SubjectModel>> subjects() async {
     final db = await _db;
-    final rows = await db.rawQuery('SELECT * FROM disciplines ORDER BY name ASC');
-    return rows.map((e) => DisciplineModel.fromMap(e)).toList();
+    final rows = await db.rawQuery('SELECT * FROM subjects ORDER BY name ASC');
+    return rows.map(SubjectModel.fromMap).toList();
   }
 
   Future<List<AudiencesItemModel>> audiences() async {
     final db = await _db;
-    final rows = await db.rawQuery('SELECT * FROM audiences ORDER BY name ASC');
+    final rows = await db.rawQuery('''
+      SELECT a.*, t.full_name AS head_teacher_name, at.type_name
+      FROM audiences a
+      LEFT JOIN teachers t ON t.id = a.head_teacher_id
+      LEFT JOIN audience_types at ON at.id = a.type_id
+      ORDER BY a.name ASC
+    ''');
     return rows.map((e) => AudiencesItemModel.fromMap(e)).toList();
   }
 
@@ -107,7 +110,51 @@ class TeachersRepository {
     final db = await _db;
     final count = Sqflite.firstIntValue(await db.rawQuery('SELECT COUNT(*) FROM teachers')) ?? 0;
     if (count > 0) return;
-    await db.insert('teachers', {'full_name': 'Селивёрстов К. О.', 'curator_group_id': null});
+    await db.insert('teachers', {'full_name': 'Селивёрстов К. О.'});
+    await db.insert('teachers', {'full_name': 'Иванова Е. А.'});
+  }
+
+  Future<void> _replaceSubjects(Database db, int teacherId, List<int> subjectIds) async {
+    await db.delete('teacher_subjects', where: 'teacher_id = ?', whereArgs: [teacherId]);
+    final ids = subjectIds.toSet().where((id) => id > 0);
+    for (final subjectId in ids) {
+      await db.insert('teacher_subjects', {'teacher_id': teacherId, 'subject_id': subjectId});
+    }
+  }
+
+  Future<void> _assignCuratedGroups(Database db, int teacherId, List<int> groupIds) async {
+    final ids = groupIds.toSet().where((id) => id > 0).toList();
+    if (ids.isEmpty) {
+      await db.update('groups', {'curator_id': null}, where: 'curator_id = ?', whereArgs: [teacherId]);
+      return;
+    }
+    final placeholders = List.filled(ids.length, '?').join(',');
+    await db.update(
+      'groups',
+      {'curator_id': null},
+      where: 'curator_id = ? AND id NOT IN ($placeholders)',
+      whereArgs: [teacherId, ...ids],
+    );
+    for (final groupId in ids) {
+      await db.update('groups', {'curator_id': teacherId}, where: 'id = ?', whereArgs: [groupId]);
+    }
+  }
+
+  Future<void> _assignAudiences(Database db, int teacherId, List<int> audienceIds) async {
+    final ids = audienceIds.toSet().where((id) => id > 0).toList();
+    if (ids.isEmpty) {
+      await db.update('audiences', {'head_teacher_id': null}, where: 'head_teacher_id = ?', whereArgs: [teacherId]);
+      return;
+    }
+    final placeholders = List.filled(ids.length, '?').join(',');
+    await db.update(
+      'audiences',
+      {'head_teacher_id': null},
+      where: 'head_teacher_id = ? AND id NOT IN ($placeholders)',
+      whereArgs: [teacherId, ...ids],
+    );
+    for (final audienceId in ids) {
+      await db.update('audiences', {'head_teacher_id': teacherId}, where: 'id = ?', whereArgs: [audienceId]);
+    }
   }
 }
-

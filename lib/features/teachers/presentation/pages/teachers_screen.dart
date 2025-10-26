@@ -1,13 +1,15 @@
 import 'package:flutter/material.dart';
 import '../../../../core/widgets/sidebar_menu.dart';
+import '../../../audiences/data/audiences_item_model.dart';
+import '../../../groups/data/group_model.dart';
+import '../../../groups/data/groups_repository.dart';
+import '../../../subjects/data/subject_model.dart';
+import '../../../subjects/data/subjects_repository.dart';
 import '../../data/teacher_model.dart';
 import '../../data/teachers_repository.dart';
-import '../../../groups/data/group_model.dart';
-import '../../../disciplines/data/discipline_model.dart';
-import '../../../audiences/data/audiences_item_model.dart';
+import '../widgets/recent_teachers_widget.dart';
 import '../widgets/teacher_card.dart';
 import '../widgets/teacher_filter_bar.dart';
-import '../widgets/recent_teachers_widget.dart';
 
 class TeachersScreen extends StatefulWidget {
   const TeachersScreen({super.key});
@@ -18,8 +20,14 @@ class TeachersScreen extends StatefulWidget {
 
 class _TeachersScreenState extends State<TeachersScreen> {
   final _repo = TeachersRepository();
+  final _groupsRepo = GroupsRepository();
+  final _subjectsRepo = SubjectsRepository();
+
   List<TeacherModel> all = [];
   List<TeacherModel> filtered = [];
+  List<GroupModel> _groups = [];
+  List<SubjectModel> _subjects = [];
+  List<AudiencesItemModel> _audiences = [];
   bool isGrid = true;
   Map<int, String> groupNameById = {};
 
@@ -31,21 +39,24 @@ class _TeachersScreenState extends State<TeachersScreen> {
 
   Future<void> _init() async {
     await _repo.seedIfEmpty();
-    final items = await _repo.getAll(orderBy: 'full_name ASC');
-    final groups = await _repo.groups();
+    final teachers = await _repo.getAll(orderBy: 'full_name ASC');
+    final groups = await _groupsRepo.getAll(orderBy: 'g.name ASC');
+    final subjects = await _subjectsRepo.getAll(orderBy: 'name ASC');
+    final audiences = await _repo.audiences();
     if (!mounted) return;
     setState(() {
-      all = items;
-      filtered = List.of(items);
+      all = teachers;
+      filtered = List.of(teachers);
+      _groups = groups;
+      _subjects = subjects;
+      _audiences = audiences;
       groupNameById = {for (final g in groups) if (g.id != null) g.id!: g.name};
     });
   }
 
   void _onFilterChanged(String q) {
     setState(() {
-      filtered = all
-          .where((e) => e.fullName.toLowerCase().contains(q.toLowerCase()))
-          .toList();
+      filtered = all.where((e) => e.fullName.toLowerCase().contains(q.toLowerCase())).toList();
     });
   }
 
@@ -57,22 +68,18 @@ class _TeachersScreenState extends State<TeachersScreen> {
 
   void _onViewChanged(bool grid) => setState(() => isGrid = grid);
 
-  Future<void> _editTeacher(TeacherModel t) async {
-    final fullName = TextEditingController(text: t.fullName);
-    final List<GroupModel> groups = await _repo.groups();
-    final List<DisciplineModel> discs = await _repo.disciplines();
-    final List<AudiencesItemModel> auds = await _repo.audiences();
+  Future<void> _editTeacher(TeacherModel teacher) async {
+    final fullName = TextEditingController(text: teacher.fullName);
+    final selectedSubjects = {...teacher.subjectIds};
+    final selectedAudiences = {...teacher.audienceIds};
+    final selectedGroups = {...teacher.curatorGroupIds};
 
-    int? curatorId = t.curatorGroupId;
-    final selectedDisc = {...t.disciplineIds};
-    final selectedAud = {...t.audienceIds};
-
-    final confirmDelete = () async {
+    Future<bool> confirmDelete() async {
       final ok = await showDialog<bool>(
         context: context,
         builder: (ctx) => AlertDialog(
           title: const Text('Удалить преподавателя?'),
-          content: Text('Вы уверены, что хотите удалить "${t.fullName}"?'),
+          content: Text('Вы уверены, что хотите удалить "${teacher.fullName}"?'),
           actions: [
             TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Отмена')),
             TextButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('Удалить')),
@@ -80,7 +87,7 @@ class _TeachersScreenState extends State<TeachersScreen> {
         ),
       );
       return ok ?? false;
-    };
+    }
 
     await showDialog(
       context: context,
@@ -102,35 +109,23 @@ class _TeachersScreenState extends State<TeachersScreen> {
                       decoration: const InputDecoration(labelText: 'ФИО'),
                     ),
                     const SizedBox(height: 12),
-                    DropdownButtonFormField<int?>(
-                      value: curatorId,
-                      isExpanded: true,
-                      decoration: const InputDecoration(labelText: 'Куратор группы'),
-                      items: [
-                        const DropdownMenuItem<int?>(value: null, child: Text('—')),
-                        ...groups.map((g) => DropdownMenuItem<int?>(value: g.id, child: Text(g.name))),
-                      ],
-                      onChanged: (v) => setStateDialog(() => curatorId = v),
-                    ),
-                    const SizedBox(height: 12),
-                    const Text('Дисциплины'),
+                    const Text('Курируемые группы'),
                     const SizedBox(height: 8),
                     Wrap(
                       spacing: 8,
                       runSpacing: 8,
-                      children: discs.map((d) {
-                        final selected = d.id != null && selectedDisc.contains(d.id);
+                      children: _groups.map((group) {
+                        final selected = group.id != null && selectedGroups.contains(group.id);
                         return FilterChip(
-                          label: Text(d.name),
+                          label: Text(group.name),
                           selected: selected,
-                          selectedColor: Colors.blue.shade100,
                           onSelected: (val) {
                             setStateDialog(() {
-                              if (d.id == null) return;
+                              if (group.id == null) return;
                               if (val) {
-                                selectedDisc.add(d.id!);
+                                selectedGroups.add(group.id!);
                               } else {
-                                selectedDisc.remove(d.id);
+                                selectedGroups.remove(group.id);
                               }
                             });
                           },
@@ -138,24 +133,47 @@ class _TeachersScreenState extends State<TeachersScreen> {
                       }).toList(),
                     ),
                     const SizedBox(height: 12),
-                    const Text('Аудитории'),
+                    const Text('Предметы'),
                     const SizedBox(height: 8),
                     Wrap(
                       spacing: 8,
                       runSpacing: 8,
-                      children: auds.map((a) {
-                        final selected = a.id != null && selectedAud.contains(a.id);
+                      children: _subjects.map((subject) {
+                        final selected = subject.id != null && selectedSubjects.contains(subject.id);
                         return FilterChip(
-                          label: Text(a.name),
+                          label: Text(subject.name),
                           selected: selected,
-                          selectedColor: Colors.blue.shade100,
                           onSelected: (val) {
                             setStateDialog(() {
-                              if (a.id == null) return;
+                              if (subject.id == null) return;
                               if (val) {
-                                selectedAud.add(a.id!);
+                                selectedSubjects.add(subject.id!);
                               } else {
-                                selectedAud.remove(a.id);
+                                selectedSubjects.remove(subject.id);
+                              }
+                            });
+                          },
+                        );
+                      }).toList(),
+                    ),
+                    const SizedBox(height: 12),
+                    const Text('Аудитории (заведующий)'),
+                    const SizedBox(height: 8),
+                    Wrap(
+                      spacing: 8,
+                      runSpacing: 8,
+                      children: _audiences.map((audience) {
+                        final selected = audience.id != null && selectedAudiences.contains(audience.id);
+                        return FilterChip(
+                          label: Text(audience.name),
+                          selected: selected,
+                          onSelected: (val) {
+                            setStateDialog(() {
+                              if (audience.id == null) return;
+                              if (val) {
+                                selectedAudiences.add(audience.id!);
+                              } else {
+                                selectedAudiences.remove(audience.id);
                               }
                             });
                           },
@@ -171,7 +189,7 @@ class _TeachersScreenState extends State<TeachersScreen> {
                           onPressed: () async {
                             if (await confirmDelete()) {
                               Navigator.pop(ctx);
-                              if (t.id != null) await _repo.delete(t.id!);
+                              if (teacher.id != null) await _repo.delete(teacher.id!);
                               await _init();
                             }
                           },
@@ -179,10 +197,10 @@ class _TeachersScreenState extends State<TeachersScreen> {
                         ),
                         ElevatedButton(
                           onPressed: () {
-                            t.fullName = fullName.text.trim();
-                            t.curatorGroupId = curatorId;
-                            t.disciplineIds = selectedDisc.toList();
-                            t.audienceIds = selectedAud.toList();
+                            teacher.fullName = fullName.text.trim();
+                            teacher.curatorGroupIds = selectedGroups.toList();
+                            teacher.subjectIds = selectedSubjects.toList();
+                            teacher.audienceIds = selectedAudiences.toList();
                             Navigator.pop(ctx);
                           },
                           child: const Text('Сохранить'),
@@ -197,7 +215,7 @@ class _TeachersScreenState extends State<TeachersScreen> {
         ),
       ),
     );
-    await _repo.update(t);
+    await _repo.update(teacher);
     await _init();
   }
 
@@ -208,7 +226,7 @@ class _TeachersScreenState extends State<TeachersScreen> {
       body: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const SidebarMenu(selected: 'Профиль и доступ'),
+          const SidebarMenu(selected: 'Преподаватели'),
           Expanded(
             flex: 2,
             child: Padding(
@@ -238,10 +256,13 @@ class _TeachersScreenState extends State<TeachersScreen> {
                             itemCount: filtered.length,
                             itemBuilder: (context, i) {
                               final item = filtered[i];
-                              final groupName = item.curatorGroupId != null ? groupNameById[item.curatorGroupId!] : null;
+                              final curatedNames = item.curatorGroupIds.map((id) => groupNameById[id]).whereType<String>().toList();
+                              final curatorInfo = curatedNames.isEmpty ? 'Куратор: —' : 'Куратор: ${curatedNames.join(', ')}';
                               return TeacherCard(
                                 teacher: item,
-                                curatorGroupName: groupName == null ? 'Куратор: —' : 'Куратор: $groupName',
+                                curatorInfo: curatorInfo,
+                                subjectCount: item.subjectIds.length,
+                                audienceCount: item.audienceIds.length,
                                 onTap: () => _editTeacher(item),
                               );
                             },
@@ -251,10 +272,13 @@ class _TeachersScreenState extends State<TeachersScreen> {
                             separatorBuilder: (_, __) => const SizedBox(height: 12),
                             itemBuilder: (context, i) {
                               final item = filtered[i];
-                              final groupName = item.curatorGroupId != null ? groupNameById[item.curatorGroupId!] : null;
+                              final curatedNames = item.curatorGroupIds.map((id) => groupNameById[id]).whereType<String>().toList();
+                              final curatorInfo = curatedNames.isEmpty ? 'Куратор: —' : 'Куратор: ${curatedNames.join(', ')}';
                               return TeacherCard(
                                 teacher: item,
-                                curatorGroupName: groupName == null ? 'Куратор: —' : 'Куратор: $groupName',
+                                curatorInfo: curatorInfo,
+                                subjectCount: item.subjectIds.length,
+                                audienceCount: item.audienceIds.length,
                                 onTap: () => _editTeacher(item),
                               );
                             },
@@ -282,4 +306,3 @@ class _TeachersScreenState extends State<TeachersScreen> {
     );
   }
 }
-
