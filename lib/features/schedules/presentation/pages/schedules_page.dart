@@ -11,9 +11,9 @@ class SchedulesPage extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final schedules = [
-      ScheduleModel(groupName: 'ПО-42', imageUrl: 'assets/schedule1.png'),
+      ScheduleModel(groupName: 'ПО-42', imageUrl: ''),
       ScheduleModel(groupName: 'ПО-41', imageUrl: ''),
-      ScheduleModel(groupName: 'П-11', imageUrl: 'assets/schedule2.png'),
+      ScheduleModel(groupName: 'П-11', imageUrl: ''),
       ScheduleModel(groupName: 'ИТ-123', imageUrl: ''),
     ];
 

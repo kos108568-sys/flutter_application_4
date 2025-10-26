@@ -19,7 +19,7 @@ class DBHelper {
     final path = p.join(dbPath, 'app_data.db');
     return await openDatabase(
       path,
-      version: 4,
+      version: 5,
       onCreate: (db, version) async {
         await db.execute('''
           CREATE TABLE audiences (
@@ -72,6 +72,20 @@ class DBHelper {
             audience_id INTEGER NOT NULL
           );
         ''');
+        await db.execute('''
+          CREATE TABLE lessons (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            discipline_id INTEGER NOT NULL,
+            type TEXT NOT NULL,
+            teacher_id INTEGER NOT NULL,
+            audience_id INTEGER NOT NULL,
+            group_id INTEGER NOT NULL,
+            pair_no INTEGER NOT NULL,
+            day_of_week INTEGER NOT NULL,
+            date TEXT NOT NULL,
+            subgroup TEXT
+          );
+        ''');
       },
       onUpgrade: (db, oldVersion, newVersion) async {
         if (oldVersion < 2) {
@@ -117,6 +131,22 @@ class DBHelper {
             CREATE TABLE IF NOT EXISTS teacher_audiences (
               teacher_id INTEGER NOT NULL,
               audience_id INTEGER NOT NULL
+            );
+          ''');
+        }
+        if (oldVersion < 5) {
+          await db.execute('''
+            CREATE TABLE IF NOT EXISTS lessons (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              discipline_id INTEGER NOT NULL,
+              type TEXT NOT NULL,
+              teacher_id INTEGER NOT NULL,
+              audience_id INTEGER NOT NULL,
+              group_id INTEGER NOT NULL,
+              pair_no INTEGER NOT NULL,
+              day_of_week INTEGER NOT NULL,
+              date TEXT NOT NULL,
+              subgroup TEXT
             );
           ''');
         }
