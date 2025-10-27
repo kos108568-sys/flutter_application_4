@@ -1,9 +1,12 @@
 import 'package:flutter/material.dart';
+
+import '../../../../core/widgets/sidebar_menu.dart';
 import '../../../disciplines/data/discipline_model.dart';
 import '../../../disciplines/data/disciplines_repository.dart';
+import '../../../teachers/data/teacher_model.dart';
+import '../../../teachers/data/teachers_repository.dart';
 import '../../data/group_model.dart';
 import '../../data/groups_repository.dart';
-import '../../../../core/widgets/sidebar_menu.dart';
 
 class GroupsPage extends StatefulWidget {
   const GroupsPage({super.key});
@@ -15,15 +18,17 @@ class GroupsPage extends StatefulWidget {
 class _GroupsPageState extends State<GroupsPage> {
   final _groupsRepo = GroupsRepository();
   final _discRepo = DisciplinesRepository();
+  final _teachersRepo = TeachersRepository();
 
   final _nameCtrl = TextEditingController();
   final _sizeCtrl = TextEditingController();
-  final _curatorCtrl = TextEditingController();
   final _courseCtrl = TextEditingController();
   final _specialtyCtrl = TextEditingController();
 
   List<DisciplineModel> _allDisc = [];
+  List<TeacherModel> _teachers = [];
   final Set<int> _selectedDiscIds = {};
+  int? _selectedCuratorId;
 
   @override
   void initState() {
@@ -32,16 +37,20 @@ class _GroupsPageState extends State<GroupsPage> {
   }
 
   Future<void> _load() async {
-    final allDisc = await _discRepo.getAll(orderBy: 'name ASC');
+    final discs = await _discRepo.getAll(orderBy: 'name ASC');
+    final teachers = await _teachersRepo.getAll(orderBy: 'full_name ASC');
     if (!mounted) return;
-    setState(() => _allDisc = allDisc);
+    setState(() {
+      _allDisc = discs;
+      _teachers = teachers.where((t) => t.id != null).toList();
+    });
   }
 
   Future<void> _save() async {
     final model = GroupModel(
       name: _nameCtrl.text.trim(),
       size: int.tryParse(_sizeCtrl.text.trim()),
-      curator: _curatorCtrl.text.trim().isEmpty ? null : _curatorCtrl.text.trim(),
+      curator: _curatorNameById(_selectedCuratorId),
       course: int.tryParse(_courseCtrl.text.trim()),
       specialty: _specialtyCtrl.text.trim().isEmpty ? null : _specialtyCtrl.text.trim(),
       disciplineIds: _selectedDiscIds.toList(),
@@ -51,17 +60,27 @@ class _GroupsPageState extends State<GroupsPage> {
     ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Группа сохранена')));
     _nameCtrl.clear();
     _sizeCtrl.clear();
-    _curatorCtrl.clear();
     _courseCtrl.clear();
     _specialtyCtrl.clear();
-    setState(() => _selectedDiscIds.clear());
+    setState(() {
+      _selectedDiscIds.clear();
+      _selectedCuratorId = null;
+    });
+  }
+
+  String? _curatorNameById(int? id) {
+    if (id == null) return null;
+    try {
+      return _teachers.firstWhere((t) => t.id == id).fullName;
+    } catch (_) {
+      return null;
+    }
   }
 
   @override
   void dispose() {
     _nameCtrl.dispose();
     _sizeCtrl.dispose();
-    _curatorCtrl.dispose();
     _courseCtrl.dispose();
     _specialtyCtrl.dispose();
     super.dispose();
@@ -85,7 +104,7 @@ class _GroupsPageState extends State<GroupsPage> {
                   borderRadius: BorderRadius.circular(16),
                   boxShadow: [
                     BoxShadow(
-                      color: Colors.black.withOpacity(0.05),
+                      color: Colors.black.withAlpha(13),
                       blurRadius: 10,
                       offset: const Offset(0, 4),
                     ),
@@ -118,9 +137,16 @@ class _GroupsPageState extends State<GroupsPage> {
                     Row(
                       children: [
                         Expanded(
-                          child: TextField(
-                            controller: _curatorCtrl,
-                            decoration: const InputDecoration(labelText: 'Куратор'),
+                          child: DropdownButtonFormField<int?>(
+                            initialValue: _selectedCuratorId,
+                            decoration: const InputDecoration(labelText: 'Куратор (преподаватель)'),
+                            items: [
+                              const DropdownMenuItem<int?>(value: null, child: Text('Не назначен')),
+                              ..._teachers.map(
+                                (t) => DropdownMenuItem<int?>(value: t.id, child: Text(t.fullName)),
+                              ),
+                            ],
+                            onChanged: (value) => setState(() => _selectedCuratorId = value),
                           ),
                         ),
                         const SizedBox(width: 16),
@@ -128,7 +154,7 @@ class _GroupsPageState extends State<GroupsPage> {
                           child: TextField(
                             controller: _sizeCtrl,
                             keyboardType: TextInputType.number,
-                            decoration: const InputDecoration(labelText: 'Количество человек'),
+                            decoration: const InputDecoration(labelText: 'Количество студентов'),
                           ),
                         ),
                       ],
@@ -148,7 +174,7 @@ class _GroupsPageState extends State<GroupsPage> {
                       ],
                     ),
                     const SizedBox(height: 16),
-                    const Text('Дисциплины', style: TextStyle(fontWeight: FontWeight.w600)),
+                    const Text('Предметы', style: TextStyle(fontWeight: FontWeight.w600)),
                     const SizedBox(height: 8),
                     Wrap(
                       spacing: 8,
@@ -177,9 +203,7 @@ class _GroupsPageState extends State<GroupsPage> {
                       mainAxisAlignment: MainAxisAlignment.end,
                       children: [
                         TextButton(
-                          onPressed: () {
-                            Navigator.maybePop(context);
-                          },
+                          onPressed: () => Navigator.maybePop(context),
                           child: const Text('Отмена'),
                         ),
                         const SizedBox(width: 12),
@@ -199,4 +223,3 @@ class _GroupsPageState extends State<GroupsPage> {
     );
   }
 }
-

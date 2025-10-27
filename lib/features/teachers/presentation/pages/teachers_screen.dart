@@ -22,6 +22,10 @@ class _TeachersScreenState extends State<TeachersScreen> {
   List<TeacherModel> filtered = [];
   bool isGrid = true;
   Map<int, String> groupNameById = {};
+  List<GroupModel> _groups = [];
+  List<DisciplineModel> _subjects = [];
+  TeacherModel? _selected;
+  String _detailTab = 'groups'; // 'groups' | 'subjects'
 
   @override
   void initState() {
@@ -33,19 +37,24 @@ class _TeachersScreenState extends State<TeachersScreen> {
     await _repo.seedIfEmpty();
     final items = await _repo.getAll(orderBy: 'full_name ASC');
     final groups = await _repo.groups();
+    final subjects = await _repo.disciplines();
     if (!mounted) return;
     setState(() {
       all = items;
       filtered = List.of(items);
+      _groups = groups;
+      _subjects = subjects;
       groupNameById = {for (final g in groups) if (g.id != null) g.id!: g.name};
+      if (_selected != null) {
+        // refresh selected from new list
+        _selected = items.firstWhere((e) => e.id == _selected!.id, orElse: () => _selected!);
+      }
     });
   }
 
   void _onFilterChanged(String q) {
     setState(() {
-      filtered = all
-          .where((e) => e.fullName.toLowerCase().contains(q.toLowerCase()))
-          .toList();
+      filtered = all.where((e) => e.fullName.toLowerCase().contains(q.toLowerCase())).toList();
     });
   }
 
@@ -56,6 +65,37 @@ class _TeachersScreenState extends State<TeachersScreen> {
   }
 
   void _onViewChanged(bool grid) => setState(() => isGrid = grid);
+
+  Future<void> _editLinks(TeacherModel t) async {
+    // select groups taught
+    final groupsResult = await showDialog<Set<int>>(
+      context: context,
+      builder: (c) => _SelectItemsDialog(
+        title: "Vybor grupp",
+        hint: "Poisk grupp...",
+        items: [for (final g in _groups) if (g.id != null) _SelectableItem(g.id!, g.name)],
+        initiallySelected: t.taughtGroupIds.toSet(),
+      ),
+    );
+    if (groupsResult != null) {
+      t.taughtGroupIds = groupsResult.toList();
+    }
+    // select subjects
+    final subjectsResult = await showDialog<Set<int>>(
+      context: context,
+      builder: (c) => _SelectItemsDialog(
+        title: "Vybor predmetov",
+        hint: "Poisk predmetov...",
+        items: [for (final s in _subjects) if (s.id != null) _SelectableItem(s.id!, s.name)],
+        initiallySelected: t.disciplineIds.toSet(),
+      ),
+    );
+    if (subjectsResult != null) {
+      t.disciplineIds = subjectsResult.toList();
+    }
+    await _repo.update(t);
+    await _init();
+  }
 
   Future<void> _editTeacher(TeacherModel t) async {
     final fullName = TextEditingController(text: t.fullName);
@@ -71,11 +111,11 @@ class _TeachersScreenState extends State<TeachersScreen> {
       final ok = await showDialog<bool>(
         context: context,
         builder: (ctx) => AlertDialog(
-          title: const Text('Удалить преподавателя?'),
-          content: Text('Вы уверены, что хотите удалить "${t.fullName}"?'),
+          title: const Text("Udalit' prepodavatelia?"),
+          content: Text("Vy uvereny, chto hotite udalit' \"${t.fullName}\"?"),
           actions: [
-            TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Отмена')),
-            TextButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('Удалить')),
+            TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Otmena')),
+            TextButton(onPressed: () => Navigator.pop(ctx, true), child: const Text("Udalit'")),
           ],
         ),
       );
@@ -95,72 +135,70 @@ class _TeachersScreenState extends State<TeachersScreen> {
                   mainAxisSize: MainAxisSize.min,
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    const Text('Редактирование преподавателя', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+                    const Text('Redaktirovanie prepodavatelia', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
                     const SizedBox(height: 12),
                     TextField(
                       controller: fullName,
-                      decoration: const InputDecoration(labelText: 'ФИО'),
+                      decoration: const InputDecoration(labelText: 'FIO'),
                     ),
                     const SizedBox(height: 12),
                     DropdownButtonFormField<int?>(
-                      value: curatorId,
+                      initialValue: curatorId,
                       isExpanded: true,
-                      decoration: const InputDecoration(labelText: 'Куратор группы'),
+                      decoration: const InputDecoration(labelText: 'Kuriruemaya gruppa'),
                       items: [
-                        const DropdownMenuItem<int?>(value: null, child: Text('—')),
+                        const DropdownMenuItem<int?>(value: null, child: Text('Ne naznachena')),
                         ...groups.map((g) => DropdownMenuItem<int?>(value: g.id, child: Text(g.name))),
                       ],
                       onChanged: (v) => setStateDialog(() => curatorId = v),
                     ),
                     const SizedBox(height: 12),
-                    const Text('Дисциплины'),
+                    const Text('Predmety'),
                     const SizedBox(height: 8),
-                    Wrap(
-                      spacing: 8,
-                      runSpacing: 8,
-                      children: discs.map((d) {
-                        final selected = d.id != null && selectedDisc.contains(d.id);
-                        return FilterChip(
-                          label: Text(d.name),
-                          selected: selected,
-                          selectedColor: Colors.blue.shade100,
-                          onSelected: (val) {
-                            setStateDialog(() {
-                              if (d.id == null) return;
-                              if (val) {
-                                selectedDisc.add(d.id!);
-                              } else {
-                                selectedDisc.remove(d.id);
-                              }
-                            });
+                    Row(
+                      children: [
+                        ElevatedButton(
+                          onPressed: () async {
+                            final result = await showDialog<Set<int>>(
+                              context: context,
+                              builder: (c) => _SelectItemsDialog(
+                                title: 'Vybor predmetov',
+                                hint: 'Poisk predmetov...',
+                                items: [for (final d in discs) if (d.id != null) _SelectableItem(d.id!, d.name)],
+                                initiallySelected: selectedDisc,
+                              ),
+                            );
+                            if (result != null) setStateDialog(() { selectedDisc..clear()..addAll(result); });
                           },
-                        );
-                      }).toList(),
+                          child: const Text("Vybrat' predmety"),
+                        ),
+                        const SizedBox(width: 12),
+                        Text('Vybrano: ' + selectedDisc.length.toString()),
+                      ],
                     ),
                     const SizedBox(height: 12),
-                    const Text('Аудитории'),
+                    const Text('Auditorii (zaveduyushchiy)'),
                     const SizedBox(height: 8),
-                    Wrap(
-                      spacing: 8,
-                      runSpacing: 8,
-                      children: auds.map((a) {
-                        final selected = a.id != null && selectedAud.contains(a.id);
-                        return FilterChip(
-                          label: Text(a.name),
-                          selected: selected,
-                          selectedColor: Colors.blue.shade100,
-                          onSelected: (val) {
-                            setStateDialog(() {
-                              if (a.id == null) return;
-                              if (val) {
-                                selectedAud.add(a.id!);
-                              } else {
-                                selectedAud.remove(a.id);
-                              }
-                            });
+                    Row(
+                      children: [
+                        ElevatedButton(
+                          onPressed: () async {
+                            final result = await showDialog<Set<int>>(
+                              context: context,
+                              builder: (c) => _SelectItemsDialog(
+                                title: 'Vybor auditorii',
+                                hint: 'Poisk auditorii...',
+                                items: [for (final a in auds) if (a.id != null) _SelectableItem(a.id!, a.name)],
+                                initiallySelected: selectedAud,
+                              ),
+                            );
+                            if (result != null) setStateDialog(() { selectedAud..clear()..addAll(result); });
                           },
-                        );
-                      }).toList(),
+                          child: const Text("Vybrat' auditorii"),
+                        ),
+                        const SizedBox(width: 12),
+                        Text('Vybrano: ' + selectedAud.length.toString()),
+                      ],
                     ),
                     const SizedBox(height: 16),
                     Row(
@@ -175,7 +213,7 @@ class _TeachersScreenState extends State<TeachersScreen> {
                               await _init();
                             }
                           },
-                          child: const Text('Удалить'),
+                          child: const Text("Udalit'"),
                         ),
                         ElevatedButton(
                           onPressed: () {
@@ -185,7 +223,7 @@ class _TeachersScreenState extends State<TeachersScreen> {
                             t.audienceIds = selectedAud.toList();
                             Navigator.pop(ctx);
                           },
-                          child: const Text('Сохранить'),
+                          child: const Text("Sohranit'"),
                         )
                       ],
                     )
@@ -208,7 +246,7 @@ class _TeachersScreenState extends State<TeachersScreen> {
       body: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const SidebarMenu(selected: 'Профиль и доступ'),
+          const SidebarMenu(selected: 'Prepodavateli'),
           Expanded(
             flex: 2,
             child: Padding(
@@ -216,7 +254,7 @@ class _TeachersScreenState extends State<TeachersScreen> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  const Text('Список преподавателей', style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold)),
+                  const Text('Spisok prepodavatelei', style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold)),
                   const SizedBox(height: 16),
                   TeacherFilterBar(
                     onFilterChanged: _onFilterChanged,
@@ -239,10 +277,13 @@ class _TeachersScreenState extends State<TeachersScreen> {
                             itemBuilder: (context, i) {
                               final item = filtered[i];
                               final groupName = item.curatorGroupId != null ? groupNameById[item.curatorGroupId!] : null;
-                              return TeacherCard(
-                                teacher: item,
-                                curatorGroupName: groupName == null ? 'Куратор: —' : 'Куратор: $groupName',
-                                onTap: () => _editTeacher(item),
+                              return GestureDetector(
+                                onTap: () => setState(() => _selected = item),
+                                child: TeacherCard(
+                                  teacher: item,
+                                  curatorGroupName: groupName == null ? 'Kurator: —' : 'Kurator: $groupName',
+                                  onTap: () => setState(() => _selected = item),
+                                ),
                               );
                             },
                           )
@@ -252,10 +293,13 @@ class _TeachersScreenState extends State<TeachersScreen> {
                             itemBuilder: (context, i) {
                               final item = filtered[i];
                               final groupName = item.curatorGroupId != null ? groupNameById[item.curatorGroupId!] : null;
-                              return TeacherCard(
-                                teacher: item,
-                                curatorGroupName: groupName == null ? 'Куратор: —' : 'Куратор: $groupName',
-                                onTap: () => _editTeacher(item),
+                              return GestureDetector(
+                                onTap: () => setState(() => _selected = item),
+                                child: TeacherCard(
+                                  teacher: item,
+                                  curatorGroupName: groupName == null ? 'Kurator: —' : 'Kurator: $groupName',
+                                  onTap: () => setState(() => _selected = item),
+                                ),
                               );
                             },
                           ),
@@ -268,12 +312,17 @@ class _TeachersScreenState extends State<TeachersScreen> {
             width: 320,
             child: Padding(
               padding: const EdgeInsets.all(24),
-              child: const SingleChildScrollView(
-                child: Column(
-                  children: [
-                    RecentTeachersWidget(),
-                  ],
-                ),
+              child: SingleChildScrollView(
+                child: _selected == null
+                    ? const RecentTeachersWidget()
+                    : _TeacherDetailPanel(
+                        teacher: _selected!,
+                        groups: _groups,
+                        subjects: _subjects,
+                        onEdit: () => _editLinks(_selected!),
+                        tab: _detailTab,
+                        onTabChanged: (v) => setState(() => _detailTab = v),
+                      ),
               ),
             ),
           )
@@ -283,3 +332,192 @@ class _TeachersScreenState extends State<TeachersScreen> {
   }
 }
 
+class _TeacherDetailPanel extends StatelessWidget {
+  final TeacherModel teacher;
+  final List<GroupModel> groups;
+  final List<DisciplineModel> subjects;
+  final VoidCallback onEdit;
+  final String tab; // 'groups' | 'subjects'
+  final ValueChanged<String> onTabChanged;
+
+  const _TeacherDetailPanel({
+    required this.teacher,
+    required this.groups,
+    required this.subjects,
+    required this.onEdit,
+    required this.tab,
+    required this.onTabChanged,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final groupById = {for (final g in groups) if (g.id != null) g.id!: g};
+    final subjectById = {for (final s in subjects) if (s.id != null) s.id!: s};
+    final taughtGroups = teacher.taughtGroupIds.map((id) => groupById[id]).whereType<GroupModel>().toList();
+    final taughtSubjects = teacher.disciplineIds.map((id) => subjectById[id]).whereType<DisciplineModel>().toList();
+
+    return Container(
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        boxShadow: [BoxShadow(color: Colors.black.withAlpha(13), blurRadius: 8, offset: const Offset(0, 4))],
+      ),
+      padding: const EdgeInsets.all(16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text('Prepodavatel', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+          const SizedBox(height: 8),
+          Text(teacher.fullName, style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w600)),
+          const SizedBox(height: 6),
+          Text('Otdelenie: ' + (teacher.department ?? '-'), style: const TextStyle(color: Colors.grey)),
+          Text('Kuratorstvo: ' + (groupById[teacher.curatorGroupId]?.name ?? '-'), style: const TextStyle(color: Colors.grey)),
+          Text('Nagruzka: ' + teacher.workloadHours.toString() + ' ch.', style: const TextStyle(color: Colors.grey)),
+          const SizedBox(height: 12),
+          Align(
+            alignment: Alignment.centerLeft,
+            child: ToggleButtons(
+              isSelected: [tab == 'groups', tab == 'subjects'],
+              onPressed: (i) => onTabChanged(i == 0 ? 'groups' : 'subjects'),
+              borderRadius: BorderRadius.circular(8),
+              children: const [
+                Padding(padding: EdgeInsets.symmetric(horizontal: 12, vertical: 6), child: Text('Gruppy')),
+                Padding(padding: EdgeInsets.symmetric(horizontal: 12, vertical: 6), child: Text('Distsipliny')),
+              ],
+            ),
+          ),
+          const SizedBox(height: 12),
+          SizedBox(width: double.infinity, child: ElevatedButton(onPressed: onEdit, child: const Text('Redaktirovat\''))),
+          const SizedBox(height: 8),
+          if (tab == 'groups')
+            ...taughtGroups.map((g) => _tile(icon: Icons.group, title: g.name, subtitle: (g.specialty ?? '') + (g.course != null ? ' • Kurs ' + g.course.toString() : '')))
+          else
+            ...taughtSubjects.map((s) => _tile(icon: Icons.menu_book, title: s.name, subtitle: (s.hours).toString() + ' ch.')),
+        ],
+      ),
+    );
+  }
+
+  Widget _tile({required IconData icon, required String title, String? subtitle}) {
+    return Container(
+      padding: const EdgeInsets.symmetric(vertical: 10),
+      decoration: const BoxDecoration(border: Border(bottom: BorderSide(color: Color(0xFFE9EDF3)))),
+      child: Row(
+        children: [
+          Icon(icon, size: 16, color: Colors.grey),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              Text(title, style: const TextStyle(fontWeight: FontWeight.w600)),
+              if (subtitle != null && subtitle.isNotEmpty) Text(subtitle, style: const TextStyle(color: Colors.grey, fontSize: 12)),
+            ]),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _SelectableItem {
+  final int id;
+  final String name;
+  _SelectableItem(this.id, this.name);
+}
+
+class _SelectItemsDialog extends StatefulWidget {
+  final String title;
+  final String hint;
+  final List<_SelectableItem> items;
+  final Set<int> initiallySelected;
+
+  const _SelectItemsDialog({
+    required this.title,
+    required this.hint,
+    required this.items,
+    required this.initiallySelected,
+  });
+
+  @override
+  State<_SelectItemsDialog> createState() => _SelectItemsDialogState();
+}
+
+class _SelectItemsDialogState extends State<_SelectItemsDialog> {
+  final _searchCtrl = TextEditingController();
+  String _q = '';
+  late Set<int> _selected;
+
+  @override
+  void initState() {
+    super.initState();
+    _selected = {...widget.initiallySelected};
+  }
+
+  @override
+  void dispose() {
+    _searchCtrl.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final list = widget.items
+        .where((it) => it.name.toLowerCase().contains(_q.toLowerCase()))
+        .toList();
+    return Dialog(
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: SizedBox(
+          width: 420,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(widget.title, style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+              const SizedBox(height: 12),
+              TextField(
+                controller: _searchCtrl,
+                decoration: InputDecoration(prefixIcon: const Icon(Icons.search), hintText: widget.hint),
+                onChanged: (v) => setState(() => _q = v.trim()),
+              ),
+              const SizedBox(height: 8),
+              SizedBox(
+                height: 320,
+                child: ListView.builder(
+                  itemCount: list.length,
+                  itemBuilder: (ctx, i) {
+                    final it = list[i];
+                    final sel = _selected.contains(it.id);
+                    return CheckboxListTile(
+                      value: sel,
+                      title: Text(it.name),
+                      controlAffinity: ListTileControlAffinity.leading,
+                      onChanged: (val) {
+                        setState(() {
+                          if (val == true) {
+                            _selected.add(it.id);
+                          } else {
+                            _selected.remove(it.id);
+                          }
+                        });
+                      },
+                    );
+                  },
+                ),
+              ),
+              const SizedBox(height: 12),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.end,
+                children: [
+                  TextButton(onPressed: () => Navigator.pop(context), child: const Text('Otmena')),
+                  const SizedBox(width: 12),
+                  ElevatedButton(onPressed: () => Navigator.pop(context, _selected), child: const Text('Gotovo')),
+                ],
+              )
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}

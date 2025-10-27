@@ -27,18 +27,74 @@ class AudiencesRepository {
 
   Future<int> insert(AudiencesItemModel item) async {
     final db = await _db;
-    return await db.insert('audiences', item.toMap()..remove('id'));
+    final map = item.toMap()..remove('id');
+    map['updated_at'] = DateTime.now().millisecondsSinceEpoch;
+    map['sync_state'] = 'pending';
+    return await db.insert('audiences', map);
   }
 
   Future<int> update(AudiencesItemModel item) async {
     if (item.id == null) return 0;
     final db = await _db;
-    return await db.update('audiences', item.toMap()..remove('id'), where: 'id = ?', whereArgs: [item.id]);
+    final map = item.toMap()..remove('id');
+    map['updated_at'] = DateTime.now().millisecondsSinceEpoch;
+    map['sync_state'] = 'pending';
+    return await db.update('audiences', map, where: 'id = ?', whereArgs: [item.id]);
   }
 
   Future<int> delete(int id) async {
     final db = await _db;
-    return await db.delete('audiences', where: 'id = ?', whereArgs: [id]);
+    // Soft delete to allow sync
+    await db.update('audiences', {'deleted': 1, 'updated_at': DateTime.now().millisecondsSinceEpoch, 'sync_state': 'pending'}, where: 'id = ?', whereArgs: [id]);
+    return 1;
+  }
+
+  // --- Sync helpers ---
+  Future<List<Map<String, Object?>>> getPendingMaps() async {
+    final db = await _db;
+    final rows = await db.rawQuery("SELECT * FROM audiences WHERE sync_state != 'synced' OR (remote_id IS NULL AND deleted = 0)");
+    return rows;
+  }
+
+  Future<Map<String, Object?>?> findByRemoteId(String remoteId) async {
+    final db = await _db;
+    final rows = await db.rawQuery('SELECT * FROM audiences WHERE remote_id = ? LIMIT 1', [remoteId]);
+    if (rows.isEmpty) return null;
+    return rows.first;
+  }
+
+  Future<void> setRemoteId(int localId, String remoteId) async {
+    final db = await _db;
+    await db.update('audiences', {'remote_id': remoteId, 'sync_state': 'synced'}, where: 'id = ?', whereArgs: [localId]);
+  }
+
+  Future<void> markSyncedByLocalId(int localId) async {
+    final db = await _db;
+    await db.update('audiences', {'sync_state': 'synced'}, where: 'id = ?', whereArgs: [localId]);
+  }
+
+  Future<void> applyRemoteToLocal(Map<String, dynamic> remote) async {
+    final db = await _db;
+    // Try find by remote_id
+    final existing = await db.rawQuery('SELECT id, updated_at FROM audiences WHERE remote_id = ? LIMIT 1', [remote['id']]);
+    final now = DateTime.now().millisecondsSinceEpoch;
+    final row = {
+      'name': remote['name'],
+      'type': remote['type'],
+      'capacity': remote['capacity'],
+      'boss': remote['boss'],
+      'building': remote['building'],
+      'equipment': remote['equipment'] is String ? remote['equipment'] : null,
+      'remote_id': remote['id'],
+      'updated_at': now,
+      'sync_state': 'synced',
+    };
+    if (existing.isEmpty) {
+      await db.insert('audiences', row..remove('id'));
+    } else {
+      final localId = existing.first['id'] as int;
+      await db.update('audiences', row, where: 'id = ?', whereArgs: [localId]);
+    }
   }
 
   Future<void> seedIfEmpty() async {

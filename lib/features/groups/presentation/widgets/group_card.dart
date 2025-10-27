@@ -4,7 +4,8 @@ import '../../../groups/data/group_model.dart';
 class GroupCard extends StatelessWidget {
   final GroupModel group;
   final VoidCallback? onTap;
-  const GroupCard({super.key, required this.group, this.onTap});
+  final String? disciplinesLine;
+  const GroupCard({super.key, required this.group, this.onTap, this.disciplinesLine});
 
   @override
   Widget build(BuildContext context) {
@@ -17,7 +18,7 @@ class GroupCard extends StatelessWidget {
           borderRadius: BorderRadius.circular(18),
           boxShadow: [
             BoxShadow(
-              color: Colors.black.withOpacity(0.05),
+              color: Colors.black.withAlpha(13),
               blurRadius: 10,
               offset: const Offset(0, 4),
             ),
@@ -39,7 +40,7 @@ class GroupCard extends StatelessWidget {
                 const SizedBox(width: 6),
                 Expanded(
                   child: Text(
-                    group.curator ?? 'Куратор не назначен',
+                    group.curator ?? 'Kurator ne naznachen',
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                     style: const TextStyle(color: Colors.grey),
@@ -48,11 +49,28 @@ class GroupCard extends StatelessWidget {
               ],
             ),
             const SizedBox(height: 6),
+            if (disciplinesLine != null && disciplinesLine!.isNotEmpty) ...[
+              Row(
+                children: [
+                  const Icon(Icons.menu_book, size: 14, color: Colors.grey),
+                  const SizedBox(width: 6),
+                  Expanded(
+                    child: Text(
+                      disciplinesLine!,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(color: Colors.grey),
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 6),
+            ],
             Row(
               children: [
                 _chip(Icons.people, (group.size ?? 0).toString()),
                 const SizedBox(width: 6),
-                _chip(Icons.school, 'Курс ${group.course ?? '-'}'),
+                _chip(Icons.school, 'Kurs ${group.course ?? '-'}'),
                 const SizedBox(width: 6),
                 Expanded(
                   child: Text(
