@@ -150,6 +150,25 @@ class DBHelper {
     await _ensureTeacherColumns(db);
     await _ensureDisciplineColumns(db);
     await _ensureAudienceColumns(db);
+    await _ensureSyncColumns(db);
+  }
+
+  Future<void> _ensureSyncColumns(Database db) async {
+    // Ensure common sync columns exist in tables we will sync
+    final tables = ['audiences', 'groups', 'teachers', 'disciplines'];
+    for (final t in tables) {
+      final rows = await db.rawQuery('PRAGMA table_info($t)');
+      final existing = rows.map((row) => (row['name'] as String).toLowerCase()).toSet();
+      Future<void> add(String name, String ddl) async {
+        if (!existing.contains(name.toLowerCase())) {
+          await db.execute('ALTER TABLE $t ADD COLUMN $name $ddl;');
+        }
+      }
+      await add('remote_id', 'TEXT');
+      await add('updated_at', 'INTEGER');
+      await add('deleted', 'INTEGER DEFAULT 0');
+      await add('sync_state', "TEXT DEFAULT 'synced'");
+    }
   }
 
   Future<void> _ensureAudienceColumns(Database db) async {

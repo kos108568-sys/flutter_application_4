@@ -1,6 +1,7 @@
 import 'dart:convert';
+import '../../../core/models/syncable_model.dart';
 
-class AudiencesItemModel {
+class AudiencesItemModel extends SyncableModel {
   int? id;
   String name;
   String type;
@@ -17,7 +18,16 @@ class AudiencesItemModel {
     required this.boss,
     this.building,
     required this.equipment,
-  });
+    String? remoteId,
+    int? updatedAt,
+    int deleted = 0,
+    String syncState = 'synced',
+  }) : super(
+    remoteId: remoteId,
+    updatedAt: updatedAt,
+    deleted: deleted,
+    syncState: syncState,
+  );
 
   Map<String, dynamic> toMap() {
     return {
@@ -28,11 +38,12 @@ class AudiencesItemModel {
       'boss': boss,
       'building': building,
       'equipment': jsonEncode(equipment),
+      ...toSyncMap(),
     };
   }
 
   factory AudiencesItemModel.fromMap(Map<String, dynamic> map) {
-    return AudiencesItemModel(
+    final model = AudiencesItemModel(
       id: map['id'] as int?,
       name: map['name'] as String,
       type: (map['type'] as String?) ?? '',
@@ -41,6 +52,8 @@ class AudiencesItemModel {
       building: map['building'] as String?,
       equipment: _parseEquipment(map['equipment']),
     );
+    model.fromSyncMap(map);
+    return model;
   }
 
   static List<String> _parseEquipment(dynamic value) {
