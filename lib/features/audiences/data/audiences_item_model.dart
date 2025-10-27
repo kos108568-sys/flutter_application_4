@@ -35,7 +35,7 @@ class AudiencesItemModel {
     return AudiencesItemModel(
       id: map['id'] as int?,
       name: map['name'] as String,
-      type: map['type'] as String,
+      type: (map['type'] as String?) ?? '',
       capacity: (map['capacity'] as num).toInt(),
       boss: (map['boss'] as String?) ?? '',
       building: map['building'] as String?,

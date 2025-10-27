@@ -13,7 +13,7 @@ class SettingsCard extends StatelessWidget {
     return InkWell(
       onTap: onTap,
       borderRadius: BorderRadius.circular(16),
-      hoverColor: Colors.grey.withOpacity(0.1),
+  hoverColor: Colors.grey.withAlpha(26),
       child: Column(
         children: [
           Container(

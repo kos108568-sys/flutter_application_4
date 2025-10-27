@@ -54,18 +54,98 @@ class DisciplinesRepository {
     return await db.delete('disciplines', where: 'id = ?', whereArgs: [id]);
   }
 
+  // --- Relations: teachers <-> disciplines ---
+  Future<List<Map<String, Object?>>> teachersLite() async {
+    final db = await _db;
+    return await db.rawQuery('SELECT id, full_name FROM teachers ORDER BY full_name ASC');
+  }
+
+  Future<Set<int>> teacherIdsFor(int disciplineId) async {
+    final db = await _db;
+    final rows = await db.rawQuery('SELECT teacher_id FROM teacher_disciplines WHERE discipline_id = ?', [disciplineId]);
+    return rows.map((e) => (e['teacher_id'] as int)).toSet();
+  }
+
+  Future<void> setTeachersFor(int disciplineId, List<int> teacherIds) async {
+    final db = await _db;
+    await db.delete('teacher_disciplines', where: 'discipline_id = ?', whereArgs: [disciplineId]);
+    for (final tid in teacherIds.toSet()) {
+      await db.insert('teacher_disciplines', {'teacher_id': tid, 'discipline_id': disciplineId});
+    }
+  }
+
+  // groups <-> disciplines join helpers (for UI cards)
+  Future<Map<int, List<String>>> groupNamesByDiscipline(List<int> disciplineIds) async {
+    if (disciplineIds.isEmpty) return {};
+    final db = await _db;
+    final placeholders = List.filled(disciplineIds.length, '?').join(',');
+    final rows = await db.rawQuery(
+      'SELECT gd.discipline_id AS did, g.name AS gname FROM group_disciplines gd INNER JOIN groups g ON g.id = gd.group_id WHERE gd.discipline_id IN ($placeholders)',
+      disciplineIds,
+    );
+    final map = <int, List<String>>{};
+    for (final r in rows) {
+      final did = r['did'] as int;
+      final name = (r['gname'] as String?) ?? '';
+      if (name.isEmpty) continue;
+      map.putIfAbsent(did, () => <String>[]).add(name);
+    }
+    return map;
+  }
+
+  // --- Relations: groups <-> disciplines (M<->N) ---
+  Future<Set<int>> groupIdsFor(int disciplineId) async {
+    final db = await _db;
+    final rows = await db.rawQuery(
+      'SELECT group_id FROM group_disciplines WHERE discipline_id = ?',
+      [disciplineId],
+    );
+    return rows.map((e) => (e['group_id'] as int)).toSet();
+  }
+
+  Future<void> setGroupsFor(int disciplineId, List<int> groupIds) async {
+    final db = await _db;
+    await db.delete('group_disciplines', where: 'discipline_id = ?', whereArgs: [disciplineId]);
+    for (final gid in groupIds.toSet()) {
+      await db.insert('group_disciplines', {
+        'group_id': gid,
+        'discipline_id': disciplineId,
+      });
+    }
+  }
+
+  // For groups UI: fetch discipline names for given group ids
+  Future<Map<int, List<String>>> disciplineNamesByGroup(List<int> groupIds) async {
+    if (groupIds.isEmpty) return {};
+    final db = await _db;
+    final placeholders = List.filled(groupIds.length, '?').join(',');
+    final rows = await db.rawQuery(
+      'SELECT gd.group_id AS gid, d.name AS dname FROM group_disciplines gd INNER JOIN disciplines d ON d.id = gd.discipline_id WHERE gd.group_id IN ($placeholders)',
+      groupIds,
+    );
+    final map = <int, List<String>>{};
+    for (final r in rows) {
+      final gid = r['gid'] as int;
+      final name = (r['dname'] as String?) ?? '';
+      if (name.isEmpty) continue;
+      map.putIfAbsent(gid, () => <String>[]).add(name);
+    }
+    return map;
+  }
+
   Future<void> seedIfEmpty() async {
     final db = await _db;
     final count = Sqflite.firstIntValue(await db.rawQuery('SELECT COUNT(*) FROM disciplines')) ?? 0;
     if (count > 0) return;
     final samples = <DisciplineModel>[
-      DisciplineModel(name: 'Математика', teacher: 'Селивёрстов К. О.', groupCode: 'ПО-42', semester: 1),
-      DisciplineModel(name: 'Объектно-ориентированное программирование', teacher: 'Селивёрстов К. О.', groupCode: 'ПО-42', semester: 1),
-      DisciplineModel(name: 'Математика', teacher: 'Селивёрстов К. О.', groupCode: 'ПО-41', semester: 2),
+      DisciplineModel(name: 'Primer A', teacher: 'Prepod 1', groupCode: 'PO-42', semester: 1, hours: 40),
+      DisciplineModel(name: 'Primer B', teacher: 'Prepod 1', groupCode: 'PO-42', semester: 1, hours: 72),
+      DisciplineModel(name: 'Primer C', teacher: 'Prepod 1', groupCode: 'PO-41', semester: 2, hours: 36),
     ];
     for (final s in samples) {
       await insert(s);
     }
   }
 }
+
 

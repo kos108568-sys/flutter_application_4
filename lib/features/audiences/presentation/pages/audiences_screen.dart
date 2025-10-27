@@ -102,7 +102,7 @@ class _AudiencesPageState extends State<AudiencesScreen> {
                 borderRadius: BorderRadius.circular(20),
                 boxShadow: [
                   BoxShadow(
-                    color: Colors.black.withOpacity(0.1),
+                    color: Colors.black.withAlpha(26),
                     blurRadius: 20,
                     offset: const Offset(0, 5),
                   ),
@@ -143,7 +143,7 @@ class _AudiencesPageState extends State<AudiencesScreen> {
                     const SizedBox(height: 12),
 
                     DropdownButtonFormField<String>(
-                      value: types.contains(selectedType) ? selectedType : null,
+                      initialValue: types.contains(selectedType) ? selectedType : null,
                       decoration: InputDecoration(
                         labelText: 'Тип аудитории',
                         filled: true,
@@ -178,7 +178,7 @@ class _AudiencesPageState extends State<AudiencesScreen> {
                     const SizedBox(height: 12),
 
                     DropdownButtonFormField<String>(
-                      value: teachers.contains(selectedTeacher) ? selectedTeacher : null,
+                      initialValue: teachers.contains(selectedTeacher) ? selectedTeacher : null,
                       decoration: InputDecoration(
                         labelText: 'Преподаватель',
                         filled: true,
