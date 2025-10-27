@@ -3,11 +3,17 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../features/audiences/data/audiences_repository.dart';
 import '../../features/audiences/data/audiences_remote_repository.dart';
+import '../../features/departments/data/department_repository.dart';
+import '../../features/audience_types/data/audience_type_repository.dart';
+import '../../features/lesson_types/data/lesson_type_repository.dart';
 import 'sync_logger.dart';
 
 class SyncService {
   final _localAudRepo = AudiencesRepository();
   final _remoteAudRepo = AudiencesRemoteRepository();
+  final _departmentRepo = DepartmentRepository();
+  final _audienceTypeRepo = AudienceTypeRepository();
+  final _lessonTypeRepo = LessonTypeRepository();
   final supabase = Supabase.instance.client;
 
   DateTime _lastPulled = DateTime.fromMillisecondsSinceEpoch(0);
@@ -89,8 +95,39 @@ class SyncService {
   }
 
   Future<void> fullSync() async {
-    // push local first, then pull remote
-    await pushPendingAudiences();
-    await pullAudiencesSince();
+    try {
+      // push local first, then pull remote
+      await pushPendingAudiences();
+      await pullAudiencesSince();
+      
+      // Синхронизация отделов (асинхронно, чтобы не блокировать)
+      Future.microtask(() async {
+        try {
+          await _departmentRepo.syncDepartments();
+        } catch (e) {
+          print('Ошибка при синхронизации отделов: $e');
+        }
+      });
+      
+      // Синхронизация типов аудиторий (асинхронно, чтобы не блокировать)
+      Future.microtask(() async {
+        try {
+          await _audienceTypeRepo.syncAudienceTypes();
+        } catch (e) {
+          print('Ошибка при синхронизации типов аудиторий: $e');
+        }
+      });
+      
+      // Синхронизация типов занятий (асинхронно, чтобы не блокировать)
+      Future.microtask(() async {
+        try {
+          await _lessonTypeRepo.syncLessonTypes();
+        } catch (e) {
+          print('Ошибка при синхронизации типов занятий: $e');
+        }
+      });
+    } catch (e) {
+      print('Ошибка при полной синхронизации: $e');
+    }
   }
 }

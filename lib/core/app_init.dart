@@ -3,18 +3,42 @@ import 'sync/sync_service.dart';
 import 'supabase_config.dart';
 
 Future<void> initializeApp() async {
-  // Initialize Supabase if configured
-  if (SUPABASE_URL.isNotEmpty && SUPABASE_ANNON_KEY.isNotEmpty) {
-    await Supabase.initialize(
-      url: SUPABASE_URL,
-      anonKey: SUPABASE_ANNON_KEY,
-    );
-
-    // Initialize sync service
-    final syncService = SyncService();
-    await syncService.init();
+  try {
+    print('Инициализация приложения...');
     
-    // Perform initial sync
-    await syncService.fullSync();
+    // Initialize Supabase if configured
+    if (SUPABASE_URL.isNotEmpty && SUPABASE_ANNON_KEY.isNotEmpty) {
+      print('Инициализация Supabase...');
+      await Supabase.initialize(
+        url: SUPABASE_URL,
+        anonKey: SUPABASE_ANNON_KEY,
+      );
+      print('Supabase инициализирован успешно');
+
+      // Initialize sync service
+      print('Инициализация сервиса синхронизации...');
+      final syncService = SyncService();
+      await syncService.init();
+      print('Сервис синхронизации инициализирован');
+      
+      // Perform initial sync in background (не блокируем запуск)
+      print('Запуск фоновой синхронизации...');
+      Future.microtask(() async {
+        try {
+          await syncService.fullSync();
+          print('Фоновая синхронизация завершена');
+        } catch (e) {
+          print('Ошибка при фоновой синхронизации: $e');
+        }
+      });
+    } else {
+      print('Supabase не настроен, пропускаем инициализацию');
+    }
+    
+    print('Инициализация приложения завершена');
+  } catch (e, stackTrace) {
+    print('Ошибка при инициализации приложения: $e');
+    print('Stack trace: $stackTrace');
+    // Не пробрасываем ошибку, чтобы приложение запустилось
   }
 }

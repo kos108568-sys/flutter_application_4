@@ -1,37 +1,22 @@
 import 'package:flutter/material.dart';
 import 'features/schedules/presentation/pages/schedules_page.dart';
-import 'core/sync/sync_service.dart';
+import 'test_departments_simple.dart';
+import 'test_audience_types_simple.dart';
+import 'test_lesson_types_simple.dart';
 
-class MyApp extends StatefulWidget {
+class MyApp extends StatelessWidget {
   const MyApp({super.key});
 
   @override
-  State<MyApp> createState() => _MyAppState();
-}
-
-class _MyAppState extends State<MyApp> {
-  final _sync = SyncService();
-
-  @override
-  void initState() {
-    super.initState();
-    _maybeInitSync();
-  }
-
-  Future<void> _maybeInitSync() async {
-    // initialize sync only if Supabase was configured
-    try {
-      await _sync.init();
-      // run a first sync in background
-      Future.microtask(() => _sync.fullSync());
-    } catch (_) {}
-  }
-
-  @override
   Widget build(BuildContext context) {
-    return const MaterialApp(
+    return MaterialApp(
       debugShowCheckedModeBanner: false,
-      home: SchedulesPage(),
+      home: const SchedulesPage(),
+      routes: {
+        '/test-departments': (context) => const DepartmentsTestScreen(),
+        '/test-audience-types': (context) => const AudienceTypesTestScreen(),
+        '/test-lesson-types': (context) => const LessonTypesTestScreen(),
+      },
     );
   }
 }

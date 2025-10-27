@@ -36,6 +36,50 @@ class SchedulesPage extends StatelessWidget {
                     const Text('Недавние', style: AppTextStyles.sectionTitle),
                     const SizedBox(height: 16),
                     _buildGrid(schedules),
+                    const SizedBox(height: 24),
+                    // Кнопки для тестирования
+                    Wrap(
+                      spacing: 8,
+                      runSpacing: 8,
+                      children: [
+                        ElevatedButton.icon(
+                          onPressed: () {
+                            Navigator.pushNamed(context, '/test-departments');
+                          },
+                          icon: const Icon(Icons.business),
+                          label: const Text('Тест отделов'),
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: Colors.blue,
+                            foregroundColor: Colors.white,
+                            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+                          ),
+                        ),
+                        ElevatedButton.icon(
+                          onPressed: () {
+                            Navigator.pushNamed(context, '/test-audience-types');
+                          },
+                          icon: const Icon(Icons.meeting_room),
+                          label: const Text('Тест типов аудиторий'),
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: Colors.purple,
+                            foregroundColor: Colors.white,
+                            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+                          ),
+                        ),
+                        ElevatedButton.icon(
+                          onPressed: () {
+                            Navigator.pushNamed(context, '/test-lesson-types');
+                          },
+                          icon: const Icon(Icons.school),
+                          label: const Text('Тест типов занятий'),
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: Colors.green,
+                            foregroundColor: Colors.white,
+                            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+                          ),
+                        ),
+                      ],
+                    ),
                   ],
                 ),
               ),

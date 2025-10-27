@@ -19,7 +19,7 @@ class DBHelper {
     final path = p.join(dbPath, 'app_data.db');
     return await openDatabase(
       path,
-      version: 4,
+      version: 7, // Увеличиваем версию для добавления таблицы lesson_types
       onOpen: (db) async {
         await _ensureSchema(db);
       },
@@ -70,6 +70,47 @@ class DBHelper {
             CREATE TABLE IF NOT EXISTS teacher_audiences (
               teacher_id INTEGER NOT NULL,
               audience_id INTEGER NOT NULL
+            );
+          ''');
+        }
+        if (oldVersion < 5) {
+          // Добавляем таблицу departments
+          await db.execute('''
+            CREATE TABLE IF NOT EXISTS departments (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              name TEXT NOT NULL,
+              remote_id TEXT,
+              updated_at INTEGER,
+              deleted INTEGER DEFAULT 0,
+              sync_state TEXT DEFAULT 'synced'
+            );
+          ''');
+        }
+        if (oldVersion < 6) {
+          // Добавляем таблицу audience_types
+          await db.execute('''
+            CREATE TABLE IF NOT EXISTS audience_types (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              name TEXT NOT NULL,
+              description TEXT,
+              remote_id TEXT,
+              updated_at INTEGER,
+              deleted INTEGER DEFAULT 0,
+              sync_state TEXT DEFAULT 'synced'
+            );
+          ''');
+        }
+        if (oldVersion < 7) {
+          // Добавляем таблицу lesson_types
+          await db.execute('''
+            CREATE TABLE IF NOT EXISTS lesson_types (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              name TEXT NOT NULL,
+              description TEXT,
+              remote_id TEXT,
+              updated_at INTEGER,
+              deleted INTEGER DEFAULT 0,
+              sync_state TEXT DEFAULT 'synced'
             );
           ''');
         }
@@ -146,6 +187,44 @@ class DBHelper {
       );
     ''');
 
+    // Добавляем таблицу departments
+    await db.execute('''
+      CREATE TABLE IF NOT EXISTS departments (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        name TEXT NOT NULL,
+        remote_id TEXT,
+        updated_at INTEGER,
+        deleted INTEGER DEFAULT 0,
+        sync_state TEXT DEFAULT 'synced'
+      );
+    ''');
+
+    // Добавляем таблицу audience_types
+    await db.execute('''
+      CREATE TABLE IF NOT EXISTS audience_types (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        name TEXT NOT NULL,
+        description TEXT,
+        remote_id TEXT,
+        updated_at INTEGER,
+        deleted INTEGER DEFAULT 0,
+        sync_state TEXT DEFAULT 'synced'
+      );
+    ''');
+
+    // Добавляем таблицу lesson_types
+    await db.execute('''
+      CREATE TABLE IF NOT EXISTS lesson_types (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        name TEXT NOT NULL,
+        description TEXT,
+        remote_id TEXT,
+        updated_at INTEGER,
+        deleted INTEGER DEFAULT 0,
+        sync_state TEXT DEFAULT 'synced'
+      );
+    ''');
+
     await _ensureGroupColumns(db);
     await _ensureTeacherColumns(db);
     await _ensureDisciplineColumns(db);
@@ -155,7 +234,7 @@ class DBHelper {
 
   Future<void> _ensureSyncColumns(Database db) async {
     // Ensure common sync columns exist in tables we will sync
-    final tables = ['audiences', 'groups', 'teachers', 'disciplines'];
+    final tables = ['audiences', 'groups', 'teachers', 'disciplines', 'departments', 'audience_types', 'lesson_types']; // Добавляем lesson_types
     for (final t in tables) {
       final rows = await db.rawQuery('PRAGMA table_info($t)');
       final existing = rows.map((row) => (row['name'] as String).toLowerCase()).toSet();

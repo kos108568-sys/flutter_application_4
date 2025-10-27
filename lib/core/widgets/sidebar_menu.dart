@@ -5,6 +5,7 @@ import '../../features/disciplines/presentation/pages/disciplines_page.dart';
 import '../../features/groups/presentation/pages/groups_screen.dart';
 import '../../features/settings/presentation/pages/settings_page.dart';
 import '../../features/schedules/presentation/pages/detailed_schedule_page.dart';
+import '../../features/departments/presentation/departments_screen.dart';
 import '../constants/app_colors.dart';
 
 class SidebarMenu extends StatelessWidget {
@@ -30,6 +31,7 @@ class SidebarMenu extends StatelessWidget {
             _navItem(context, Icons.home, 'Главная', const SchedulesPage()),
             _navItem(context, Icons.menu_book, 'Дисциплины', const DisciplinesPage()),
             _navItem(context, Icons.group, 'Группы', const GroupsScreen()),
+            _navItem(context, Icons.business, 'Отделы', const DepartmentsScreen()),
             _navItem(context, Icons.schedule, 'Расписание', const DetailedSchedulePage()),
             _navItem(context, Icons.calendar_today, 'График занятий', null),
             _navItem(context, Icons.settings, 'Настройки', const SettingsPage()),
