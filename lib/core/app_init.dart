@@ -10,11 +10,8 @@ Future<void> initializeApp() async {
       anonKey: SUPABASE_ANNON_KEY,
     );
 
-    // Initialize sync service
-    final syncService = SyncService();
-    await syncService.init();
-    
-    // Perform initial sync
-    await syncService.fullSync();
+  // Initialize sync service (use singleton). init() performs initial fullSync internally.
+  final syncService = SyncService.instance;
+  await syncService.init();
   }
 }

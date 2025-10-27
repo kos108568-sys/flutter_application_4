@@ -131,7 +131,53 @@ class TeachersRepository {
     if (count > 0) return;
     await db.insert('teachers', {'full_name': 'Primer Prepodavatel', 'curator_group_id': null, 'department': null});
   }
+
+  // --- Sync helpers ---
+  Future<List<Map<String, Object?>>> getPendingMaps() async {
+    final db = await _db;
+    final rows = await db.rawQuery("SELECT * FROM teachers WHERE sync_state != 'synced' OR (remote_id IS NULL AND deleted = 0)");
+    return rows;
+  }
+
+  Future<Map<String, Object?>?> findByRemoteId(String remoteId) async {
+    final db = await _db;
+    final rows = await db.rawQuery('SELECT * FROM teachers WHERE remote_id = ? LIMIT 1', [remoteId]);
+    if (rows.isEmpty) return null;
+    return rows.first;
+  }
+
+  Future<void> setRemoteId(int localId, String remoteId) async {
+    final db = await _db;
+    await db.update('teachers', {'remote_id': remoteId, 'sync_state': 'synced'}, where: 'id = ?', whereArgs: [localId]);
+  }
+
+  Future<void> markSyncedByLocalId(int localId) async {
+    final db = await _db;
+    await db.update('teachers', {'sync_state': 'synced'}, where: 'id = ?', whereArgs: [localId]);
+  }
+
+  Future<void> applyRemoteToLocal(Map<String, dynamic> remote) async {
+    final db = await _db;
+    final existing = await db.rawQuery('SELECT id, updated_at FROM teachers WHERE remote_id = ? LIMIT 1', [remote['id']]);
+    final now = DateTime.now().millisecondsSinceEpoch;
+    final row = {
+      'full_name': remote['full_name'],
+      'curator_group_id': remote['curator_group_id'],
+      'department': remote['department'],
+      'remote_id': remote['id'],
+      'updated_at': now,
+      'sync_state': 'synced',
+    };
+    if (existing.isEmpty) {
+      await db.insert('teachers', row..remove('id'));
+    } else {
+      final localId = existing.first['id'] as int;
+      await db.update('teachers', row, where: 'id = ?', whereArgs: [localId]);
+    }
+  }
 }
+
+
 
 
 

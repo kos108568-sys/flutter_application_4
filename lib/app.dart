@@ -10,7 +10,8 @@ class MyApp extends StatefulWidget {
 }
 
 class _MyAppState extends State<MyApp> {
-  final _sync = SyncService();
+  // Use singleton instance — SyncService has a private unnamed ctor
+  final _sync = SyncService.instance;
 
   @override
   void initState() {

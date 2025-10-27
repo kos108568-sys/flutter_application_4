@@ -1,9 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_application_4/core/widgets/custom_button.dart';
-import '../../features/schedules/presentation/pages/schedules_page.dart';
-import '../../features/disciplines/presentation/pages/disciplines_page.dart';
-import '../../features/groups/presentation/pages/groups_screen.dart';
-import '../../features/settings/presentation/pages/settings_page.dart';
+import 'package:flutter_application_4/features/schedules/presentation/pages/schedules_page.dart';
+import 'package:flutter_application_4/features/disciplines/presentation/pages/disciplines_page.dart';
+import 'package:flutter_application_4/features/groups/presentation/pages/groups_screen.dart';
+import 'package:flutter_application_4/features/settings/presentation/pages/settings_page.dart';
 import '../constants/app_colors.dart';
 
 class SidebarMenu extends StatelessWidget {
