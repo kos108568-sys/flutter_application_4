@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import '../../data/teacher_model.dart';
 
 class TeacherCard extends StatelessWidget {
-  final TeacherModel teacher;
+  final Teacher teacher;
   final String? curatorGroupName;
   final VoidCallback? onTap;
   const TeacherCard({super.key, required this.teacher, this.curatorGroupName, this.onTap});
@@ -34,20 +34,43 @@ class TeacherCard extends StatelessWidget {
               style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w700),
             ),
             const SizedBox(height: 8),
-            Row(
-              children: [
-                const Icon(Icons.group, size: 14, color: Colors.grey),
-                const SizedBox(width: 6),
-                Expanded(
-                  child: Text(
-                    curatorGroupName ?? 'Куратор: —',
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(color: Colors.grey),
+            if (curatorGroupName != null)
+              Row(
+                children: [
+                  const Icon(Icons.group, size: 14, color: Colors.grey),
+                  const SizedBox(width: 6),
+                  Expanded(
+                    child: Text(
+                      'Куратор: ' + (curatorGroupName ?? '—'),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(color: Colors.grey),
+                    ),
                   ),
+                ],
+              ),
+            if (teacher.email != null && teacher.email!.isNotEmpty)
+              Padding(
+                padding: const EdgeInsets.only(top: 4),
+                child: Row(
+                  children: [
+                    const Icon(Icons.email, size: 14, color: Colors.grey),
+                    const SizedBox(width: 6),
+                    Expanded(child: Text(teacher.email!, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(color: Colors.grey))),
+                  ],
                 ),
-              ],
-            )
+              ),
+            if (teacher.phone != null && teacher.phone!.isNotEmpty)
+              Padding(
+                padding: const EdgeInsets.only(top: 4),
+                child: Row(
+                  children: [
+                    const Icon(Icons.phone, size: 14, color: Colors.grey),
+                    const SizedBox(width: 6),
+                    Expanded(child: Text(teacher.phone!, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(color: Colors.grey))),
+                  ],
+                ),
+              ),
           ],
         ),
       ),

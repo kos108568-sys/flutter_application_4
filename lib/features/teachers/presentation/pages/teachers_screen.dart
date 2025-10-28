@@ -2,12 +2,13 @@ import 'package:flutter/material.dart';
 import '../../../../core/widgets/sidebar_menu.dart';
 import '../../data/teacher_model.dart';
 import '../../data/teachers_repository.dart';
-import '../../../groups/data/group_model.dart';
-import '../../../disciplines/data/discipline_model.dart';
-import '../../../audiences/data/audiences_item_model.dart';
 import '../widgets/teacher_card.dart';
 import '../widgets/teacher_filter_bar.dart';
 import '../widgets/recent_teachers_widget.dart';
+import '../../../departments/data/department_repository.dart';
+import '../../../departments/data/department_model.dart';
+import '../../../disciplines/data/disciplines_repository.dart';
+import '../../../disciplines/data/discipline_model.dart';
 
 class TeachersScreen extends StatefulWidget {
   const TeachersScreen({super.key});
@@ -18,14 +19,14 @@ class TeachersScreen extends StatefulWidget {
 
 class _TeachersScreenState extends State<TeachersScreen> {
   final _repo = TeachersRepository();
-  List<TeacherModel> all = [];
-  List<TeacherModel> filtered = [];
+  final _deptRepo = DepartmentRepository();
+  final _discRepo = DisciplinesRepository();
+  List<Teacher> all = [];
+  List<Teacher> filtered = [];
   bool isGrid = true;
-  Map<int, String> groupNameById = {};
-  List<GroupModel> _groups = [];
-  List<DisciplineModel> _subjects = [];
-  TeacherModel? _selected;
-  String _detailTab = 'groups'; // 'groups' | 'subjects'
+  Teacher? _selected;
+  List<Department> _departments = [];
+  List<Discipline> _disciplines = [];
 
   @override
   void initState() {
@@ -35,18 +36,18 @@ class _TeachersScreenState extends State<TeachersScreen> {
 
   Future<void> _init() async {
     await _repo.seedIfEmpty();
-    final items = await _repo.getAll(orderBy: 'full_name ASC');
-    final groups = await _repo.groups();
-    final subjects = await _repo.disciplines();
+    try {
+      _departments = await _deptRepo.getAllDepartments(orderBy: 'name ASC');
+    } catch (_) {}
+    try {
+      _disciplines = await _discRepo.getAllDisciplines(orderBy: 'name ASC');
+    } catch (_) {}
+    final items = await _repo.getAllTeachers(orderBy: 'full_name ASC');
     if (!mounted) return;
     setState(() {
       all = items;
       filtered = List.of(items);
-      _groups = groups;
-      _subjects = subjects;
-      groupNameById = {for (final g in groups) if (g.id != null) g.id!: g.name};
       if (_selected != null) {
-        // refresh selected from new list
         _selected = items.firstWhere((e) => e.id == _selected!.id, orElse: () => _selected!);
       }
     });
@@ -66,177 +67,49 @@ class _TeachersScreenState extends State<TeachersScreen> {
 
   void _onViewChanged(bool grid) => setState(() => isGrid = grid);
 
-  Future<void> _editLinks(TeacherModel t) async {
-    // select groups taught
-    final groupsResult = await showDialog<Set<int>>(
+  Future<void> _openAddTeacher() async {
+    final res = await showDialog<_TeacherResult>(
       context: context,
-      builder: (c) => _SelectItemsDialog(
-        title: "Vybor grupp",
-        hint: "Poisk grupp...",
-        items: [for (final g in _groups) if (g.id != null) _SelectableItem(g.id!, g.name)],
-        initiallySelected: t.taughtGroupIds.toSet(),
-      ),
+      builder: (ctx) => _TeacherDialog(departments: _departments, disciplines: _disciplines),
     );
-    if (groupsResult != null) {
-      t.taughtGroupIds = groupsResult.toList();
+    if (res != null) {
+      final newId = await _repo.insertTeacherWithSync(res.teacher);
+      await _repo.setTeacherDisciplines(newId, res.disciplineIds);
+      await _init();
     }
-    // select subjects
-    final subjectsResult = await showDialog<Set<int>>(
-      context: context,
-      builder: (c) => _SelectItemsDialog(
-        title: "Vybor predmetov",
-        hint: "Poisk predmetov...",
-        items: [for (final s in _subjects) if (s.id != null) _SelectableItem(s.id!, s.name)],
-        initiallySelected: t.disciplineIds.toSet(),
-      ),
-    );
-    if (subjectsResult != null) {
-      t.disciplineIds = subjectsResult.toList();
-    }
-    await _repo.update(t);
-    await _init();
   }
 
-  Future<void> _editTeacher(TeacherModel t) async {
-    final fullName = TextEditingController(text: t.fullName);
-    final List<GroupModel> groups = await _repo.groups();
-    final List<DisciplineModel> discs = await _repo.disciplines();
-    final List<AudiencesItemModel> auds = await _repo.audiences();
-
-    int? curatorId = t.curatorGroupId;
-    final selectedDisc = {...t.disciplineIds};
-    final selectedAud = {...t.audienceIds};
-
-    final confirmDelete = () async {
-      final ok = await showDialog<bool>(
-        context: context,
-        builder: (ctx) => AlertDialog(
-          title: const Text("Udalit' prepodavatelia?"),
-          content: Text("Vy uvereny, chto hotite udalit' \"${t.fullName}\"?"),
-          actions: [
-            TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Otmena')),
-            TextButton(onPressed: () => Navigator.pop(ctx, true), child: const Text("Udalit'")),
-          ],
-        ),
-      );
-      return ok ?? false;
-    };
-
-    await showDialog(
+  Future<void> _openEditTeacher(Teacher t) async {
+    final res = await showDialog<_TeacherResult>(
       context: context,
-      builder: (ctx) => Dialog(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-        child: Padding(
-          padding: const EdgeInsets.all(16),
-          child: StatefulBuilder(
-            builder: (context, setStateDialog) {
-              return SingleChildScrollView(
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    const Text('Redaktirovanie prepodavatelia', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
-                    const SizedBox(height: 12),
-                    TextField(
-                      controller: fullName,
-                      decoration: const InputDecoration(labelText: 'FIO'),
-                    ),
-                    const SizedBox(height: 12),
-                    DropdownButtonFormField<int?>(
-                      initialValue: curatorId,
-                      isExpanded: true,
-                      decoration: const InputDecoration(labelText: 'Kuriruemaya gruppa'),
-                      items: [
-                        const DropdownMenuItem<int?>(value: null, child: Text('Ne naznachena')),
-                        ...groups.map((g) => DropdownMenuItem<int?>(value: g.id, child: Text(g.name))),
-                      ],
-                      onChanged: (v) => setStateDialog(() => curatorId = v),
-                    ),
-                    const SizedBox(height: 12),
-                    const Text('Predmety'),
-                    const SizedBox(height: 8),
-                    Row(
-                      children: [
-                        ElevatedButton(
-                          onPressed: () async {
-                            final result = await showDialog<Set<int>>(
-                              context: context,
-                              builder: (c) => _SelectItemsDialog(
-                                title: 'Vybor predmetov',
-                                hint: 'Poisk predmetov...',
-                                items: [for (final d in discs) if (d.id != null) _SelectableItem(d.id!, d.name)],
-                                initiallySelected: selectedDisc,
-                              ),
-                            );
-                            if (result != null) setStateDialog(() { selectedDisc..clear()..addAll(result); });
-                          },
-                          child: const Text("Vybrat' predmety"),
-                        ),
-                        const SizedBox(width: 12),
-                        Text('Vybrano: ' + selectedDisc.length.toString()),
-                      ],
-                    ),
-                    const SizedBox(height: 12),
-                    const Text('Auditorii (zaveduyushchiy)'),
-                    const SizedBox(height: 8),
-                    Row(
-                      children: [
-                        ElevatedButton(
-                          onPressed: () async {
-                            final result = await showDialog<Set<int>>(
-                              context: context,
-                              builder: (c) => _SelectItemsDialog(
-                                title: 'Vybor auditorii',
-                                hint: 'Poisk auditorii...',
-                                items: [for (final a in auds) if (a.id != null) _SelectableItem(a.id!, a.name)],
-                                initiallySelected: selectedAud,
-                              ),
-                            );
-                            if (result != null) setStateDialog(() { selectedAud..clear()..addAll(result); });
-                          },
-                          child: const Text("Vybrat' auditorii"),
-                        ),
-                        const SizedBox(width: 12),
-                        Text('Vybrano: ' + selectedAud.length.toString()),
-                      ],
-                    ),
-                    const SizedBox(height: 16),
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: [
-                        OutlinedButton(
-                          style: OutlinedButton.styleFrom(foregroundColor: Colors.red),
-                          onPressed: () async {
-                            if (await confirmDelete()) {
-                              Navigator.pop(ctx);
-                              if (t.id != null) await _repo.delete(t.id!);
-                              await _init();
-                            }
-                          },
-                          child: const Text("Udalit'"),
-                        ),
-                        ElevatedButton(
-                          onPressed: () {
-                            t.fullName = fullName.text.trim();
-                            t.curatorGroupId = curatorId;
-                            t.disciplineIds = selectedDisc.toList();
-                            t.audienceIds = selectedAud.toList();
-                            Navigator.pop(ctx);
-                          },
-                          child: const Text("Sohranit'"),
-                        )
-                      ],
-                    )
-                  ],
-                ),
-              );
-            },
-          ),
-        ),
+      builder: (ctx) => _TeacherDialog(existing: t, departments: _departments, disciplines: _disciplines),
+    );
+    if (res != null) {
+      await _repo.updateTeacherWithSync(res.teacher);
+      if (res.teacher.id != null) {
+        await _repo.setTeacherDisciplines(res.teacher.id!, res.disciplineIds);
+      }
+      await _init();
+    }
+  }
+
+  Future<void> _deleteTeacher(Teacher t) async {
+    if (t.id == null) return;
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (c) => AlertDialog(
+        title: const Text('Удалить преподавателя?'),
+        content: Text('Вы уверены, что хотите удалить «${t.fullName}»?'),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(c, false), child: const Text('Отмена')),
+          TextButton(onPressed: () => Navigator.pop(c, true), child: const Text('Удалить')),
+        ],
       ),
     );
-    await _repo.update(t);
-    await _init();
+    if (ok == true) {
+      await _repo.deleteTeacherWithSync(t.id!);
+      await _init();
+    }
   }
 
   @override
@@ -256,11 +129,19 @@ class _TeachersScreenState extends State<TeachersScreen> {
                 children: [
                   const Text('Spisok prepodavatelei', style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold)),
                   const SizedBox(height: 16),
-                  TeacherFilterBar(
-                    onFilterChanged: _onFilterChanged,
-                    onSortChanged: _onSortChanged,
-                    onViewChanged: _onViewChanged,
-                    isGridView: isGrid,
+                  Row(
+                    children: [
+                      Expanded(
+                        child: TeacherFilterBar(
+                          onFilterChanged: _onFilterChanged,
+                          onSortChanged: _onSortChanged,
+                          onViewChanged: _onViewChanged,
+                          isGridView: isGrid,
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      ElevatedButton.icon(onPressed: _openAddTeacher, icon: const Icon(Icons.add), label: const Text('Добавить')),
+                    ],
                   ),
                   const SizedBox(height: 16),
                   Expanded(
@@ -276,12 +157,11 @@ class _TeachersScreenState extends State<TeachersScreen> {
                             itemCount: filtered.length,
                             itemBuilder: (context, i) {
                               final item = filtered[i];
-                              final groupName = item.curatorGroupId != null ? groupNameById[item.curatorGroupId!] : null;
                               return GestureDetector(
                                 onTap: () => setState(() => _selected = item),
                                 child: TeacherCard(
                                   teacher: item,
-                                  curatorGroupName: groupName == null ? 'Kurator: —' : 'Kurator: $groupName',
+                                  curatorGroupName: null,
                                   onTap: () => setState(() => _selected = item),
                                 ),
                               );
@@ -292,12 +172,11 @@ class _TeachersScreenState extends State<TeachersScreen> {
                             separatorBuilder: (_, __) => const SizedBox(height: 12),
                             itemBuilder: (context, i) {
                               final item = filtered[i];
-                              final groupName = item.curatorGroupId != null ? groupNameById[item.curatorGroupId!] : null;
                               return GestureDetector(
                                 onTap: () => setState(() => _selected = item),
                                 child: TeacherCard(
                                   teacher: item,
-                                  curatorGroupName: groupName == null ? 'Kurator: —' : 'Kurator: $groupName',
+                                  curatorGroupName: null,
                                   onTap: () => setState(() => _selected = item),
                                 ),
                               );
@@ -315,13 +194,11 @@ class _TeachersScreenState extends State<TeachersScreen> {
               child: SingleChildScrollView(
                 child: _selected == null
                     ? const RecentTeachersWidget()
-                    : _TeacherDetailPanel(
+                    : _TeacherInfoPanel(
                         teacher: _selected!,
-                        groups: _groups,
-                        subjects: _subjects,
-                        onEdit: () => _editLinks(_selected!),
-                        tab: _detailTab,
-                        onTabChanged: (v) => setState(() => _detailTab = v),
+                        onEdit: () => _openEditTeacher(_selected!),
+                        onDelete: () => _deleteTeacher(_selected!),
+                        departmentName: _departments.firstWhere((d) => d.id == _selected!.departmentId, orElse: () => Department(name: '')).name,
                       ),
               ),
             ),
@@ -332,30 +209,146 @@ class _TeachersScreenState extends State<TeachersScreen> {
   }
 }
 
-class _TeacherDetailPanel extends StatelessWidget {
-  final TeacherModel teacher;
-  final List<GroupModel> groups;
-  final List<DisciplineModel> subjects;
-  final VoidCallback onEdit;
-  final String tab; // 'groups' | 'subjects'
-  final ValueChanged<String> onTabChanged;
+class _TeacherResult {
+  final Teacher teacher;
+  final List<int> disciplineIds;
+  _TeacherResult(this.teacher, this.disciplineIds);
+}
 
-  const _TeacherDetailPanel({
-    required this.teacher,
-    required this.groups,
-    required this.subjects,
-    required this.onEdit,
-    required this.tab,
-    required this.onTabChanged,
-  });
+class _TeacherDialog extends StatefulWidget {
+  final Teacher? existing;
+  final List<Department> departments;
+  final List<Discipline> disciplines;
+  const _TeacherDialog({this.existing, required this.departments, required this.disciplines});
+
+  @override
+  State<_TeacherDialog> createState() => _TeacherDialogState();
+}
+
+class _TeacherDialogState extends State<_TeacherDialog> {
+  final _name = TextEditingController();
+  final _email = TextEditingController();
+  final _phone = TextEditingController();
+  final _notes = TextEditingController();
+  int? _departmentId;
+  final Set<int> _selectedDisciplineIds = {};
+
+  @override
+  void initState() {
+    super.initState();
+    final e = widget.existing;
+    if (e != null) {
+      _name.text = e.fullName;
+      _email.text = e.email ?? '';
+      _phone.text = e.phone ?? '';
+      _notes.text = e.notes ?? '';
+      _departmentId = e.departmentId;
+    }
+  }
+
+  @override
+  void dispose() {
+    _name.dispose();
+    _email.dispose();
+    _phone.dispose();
+    _notes.dispose();
+    super.dispose();
+  }
+
+  void _submit() {
+    if (_name.text.trim().isEmpty) return;
+    final base = Teacher(
+      id: widget.existing?.id,
+      fullName: _name.text.trim(),
+      departmentId: _departmentId,
+      email: _email.text.trim().isEmpty ? null : _email.text.trim(),
+      phone: _phone.text.trim().isEmpty ? null : _phone.text.trim(),
+      notes: _notes.text.trim().isEmpty ? null : _notes.text.trim(),
+    );
+    Navigator.pop(context, _TeacherResult(base, _selectedDisciplineIds.toList()));
+  }
 
   @override
   Widget build(BuildContext context) {
-    final groupById = {for (final g in groups) if (g.id != null) g.id!: g};
-    final subjectById = {for (final s in subjects) if (s.id != null) s.id!: s};
-    final taughtGroups = teacher.taughtGroupIds.map((id) => groupById[id]).whereType<GroupModel>().toList();
-    final taughtSubjects = teacher.disciplineIds.map((id) => subjectById[id]).whereType<DisciplineModel>().toList();
+    return Dialog(
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(widget.existing == null ? 'Добавить преподавателя' : 'Редактировать преподавателя', style: const TextStyle(fontWeight: FontWeight.bold)),
+              const SizedBox(height: 12),
+              TextField(controller: _name, decoration: const InputDecoration(labelText: 'ФИО')),
+              const SizedBox(height: 8),
+              DropdownButtonFormField<int?>(
+                value: _departmentId,
+                isExpanded: true,
+                items: [
+                  const DropdownMenuItem<int?>(value: null, child: Text('Без отдела')),
+                  ...widget.departments.where((d) => d.id != null).map((d) => DropdownMenuItem<int?>(value: d.id, child: Text(d.name))),
+                ],
+                decoration: const InputDecoration(labelText: 'Отдел'),
+                onChanged: (v) => setState(() => _departmentId = v),
+              ),
+              const SizedBox(height: 8),
+              TextField(controller: _email, decoration: const InputDecoration(labelText: 'Email')),
+              const SizedBox(height: 8),
+              TextField(controller: _phone, decoration: const InputDecoration(labelText: 'Телефон')),
+              const SizedBox(height: 8),
+              TextField(controller: _notes, decoration: const InputDecoration(labelText: 'Заметки')),
+              const SizedBox(height: 12),
+              const Text('Дисциплины', style: TextStyle(fontWeight: FontWeight.w600)),
+              const SizedBox(height: 6),
+              Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                children: [
+                  for (final d in widget.disciplines)
+                    if (d.id != null)
+                      FilterChip(
+                        label: Text(d.name),
+                        selected: _selectedDisciplineIds.contains(d.id),
+                        onSelected: (v) {
+                          setState(() {
+                            if (v) {
+                              _selectedDisciplineIds.add(d.id!);
+                            } else {
+                              _selectedDisciplineIds.remove(d.id);
+                            }
+                          });
+                        },
+                      ),
+                ],
+              ),
+              const SizedBox(height: 12),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.end,
+                children: [
+                  TextButton(onPressed: () => Navigator.pop(context), child: const Text('Отмена')),
+                  const SizedBox(width: 8),
+                  ElevatedButton(onPressed: _submit, child: const Text('Сохранить')),
+                ],
+              )
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
 
+class _TeacherInfoPanel extends StatelessWidget {
+  final Teacher teacher;
+  final VoidCallback onEdit;
+  final VoidCallback onDelete;
+  final String? departmentName;
+  const _TeacherInfoPanel({required this.teacher, required this.onEdit, required this.onDelete, this.departmentName});
+
+  @override
+  Widget build(BuildContext context) {
     return Container(
       decoration: BoxDecoration(
         color: Colors.white,
@@ -370,153 +363,19 @@ class _TeacherDetailPanel extends StatelessWidget {
           const SizedBox(height: 8),
           Text(teacher.fullName, style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w600)),
           const SizedBox(height: 6),
-          Text('Otdelenie: ' + (teacher.department ?? '-'), style: const TextStyle(color: Colors.grey)),
-          Text('Kuratorstvo: ' + (groupById[teacher.curatorGroupId]?.name ?? '-'), style: const TextStyle(color: Colors.grey)),
-          Text('Nagruzka: ' + teacher.workloadHours.toString() + ' ch.', style: const TextStyle(color: Colors.grey)),
+          if (departmentName != null && departmentName!.isNotEmpty) Text('Отдел: $departmentName', style: const TextStyle(color: Colors.grey)),
+          if (teacher.email != null && teacher.email!.isNotEmpty) Text('Email: ${teacher.email}', style: const TextStyle(color: Colors.grey)),
+          if (teacher.phone != null && teacher.phone!.isNotEmpty) Text('Phone: ${teacher.phone}', style: const TextStyle(color: Colors.grey)),
+          if (teacher.notes != null && teacher.notes!.isNotEmpty) Text('Notes: ${teacher.notes}', style: const TextStyle(color: Colors.grey)),
           const SizedBox(height: 12),
-          Align(
-            alignment: Alignment.centerLeft,
-            child: ToggleButtons(
-              isSelected: [tab == 'groups', tab == 'subjects'],
-              onPressed: (i) => onTabChanged(i == 0 ? 'groups' : 'subjects'),
-              borderRadius: BorderRadius.circular(8),
-              children: const [
-                Padding(padding: EdgeInsets.symmetric(horizontal: 12, vertical: 6), child: Text('Gruppy')),
-                Padding(padding: EdgeInsets.symmetric(horizontal: 12, vertical: 6), child: Text('Distsipliny')),
-              ],
-            ),
-          ),
-          const SizedBox(height: 12),
-          SizedBox(width: double.infinity, child: ElevatedButton(onPressed: onEdit, child: const Text('Redaktirovat\''))),
-          const SizedBox(height: 8),
-          if (tab == 'groups')
-            ...taughtGroups.map((g) => _tile(icon: Icons.group, title: g.name, subtitle: (g.specialty ?? '') + (g.course != null ? ' • Kurs ' + g.course.toString() : '')))
-          else
-            ...taughtSubjects.map((s) => _tile(icon: Icons.menu_book, title: s.name, subtitle: (s.hours).toString() + ' ch.')),
-        ],
-      ),
-    );
-  }
-
-  Widget _tile({required IconData icon, required String title, String? subtitle}) {
-    return Container(
-      padding: const EdgeInsets.symmetric(vertical: 10),
-      decoration: const BoxDecoration(border: Border(bottom: BorderSide(color: Color(0xFFE9EDF3)))),
-      child: Row(
-        children: [
-          Icon(icon, size: 16, color: Colors.grey),
-          const SizedBox(width: 8),
-          Expanded(
-            child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-              Text(title, style: const TextStyle(fontWeight: FontWeight.w600)),
-              if (subtitle != null && subtitle.isNotEmpty) Text(subtitle, style: const TextStyle(color: Colors.grey, fontSize: 12)),
-            ]),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _SelectableItem {
-  final int id;
-  final String name;
-  _SelectableItem(this.id, this.name);
-}
-
-class _SelectItemsDialog extends StatefulWidget {
-  final String title;
-  final String hint;
-  final List<_SelectableItem> items;
-  final Set<int> initiallySelected;
-
-  const _SelectItemsDialog({
-    required this.title,
-    required this.hint,
-    required this.items,
-    required this.initiallySelected,
-  });
-
-  @override
-  State<_SelectItemsDialog> createState() => _SelectItemsDialogState();
-}
-
-class _SelectItemsDialogState extends State<_SelectItemsDialog> {
-  final _searchCtrl = TextEditingController();
-  String _q = '';
-  late Set<int> _selected;
-
-  @override
-  void initState() {
-    super.initState();
-    _selected = {...widget.initiallySelected};
-  }
-
-  @override
-  void dispose() {
-    _searchCtrl.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final list = widget.items
-        .where((it) => it.name.toLowerCase().contains(_q.toLowerCase()))
-        .toList();
-    return Dialog(
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: SizedBox(
-          width: 420,
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
+          Row(
             children: [
-              Text(widget.title, style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
-              const SizedBox(height: 12),
-              TextField(
-                controller: _searchCtrl,
-                decoration: InputDecoration(prefixIcon: const Icon(Icons.search), hintText: widget.hint),
-                onChanged: (v) => setState(() => _q = v.trim()),
-              ),
-              const SizedBox(height: 8),
-              SizedBox(
-                height: 320,
-                child: ListView.builder(
-                  itemCount: list.length,
-                  itemBuilder: (ctx, i) {
-                    final it = list[i];
-                    final sel = _selected.contains(it.id);
-                    return CheckboxListTile(
-                      value: sel,
-                      title: Text(it.name),
-                      controlAffinity: ListTileControlAffinity.leading,
-                      onChanged: (val) {
-                        setState(() {
-                          if (val == true) {
-                            _selected.add(it.id);
-                          } else {
-                            _selected.remove(it.id);
-                          }
-                        });
-                      },
-                    );
-                  },
-                ),
-              ),
-              const SizedBox(height: 12),
-              Row(
-                mainAxisAlignment: MainAxisAlignment.end,
-                children: [
-                  TextButton(onPressed: () => Navigator.pop(context), child: const Text('Otmena')),
-                  const SizedBox(width: 12),
-                  ElevatedButton(onPressed: () => Navigator.pop(context, _selected), child: const Text('Gotovo')),
-                ],
-              )
+              ElevatedButton.icon(onPressed: onEdit, icon: const Icon(Icons.edit), label: const Text('Редактировать')),
+              const SizedBox(width: 8),
+              OutlinedButton.icon(onPressed: onDelete, icon: const Icon(Icons.delete_outline), label: const Text('Удалить')),
             ],
-          ),
-        ),
+          )
+        ],
       ),
     );
   }

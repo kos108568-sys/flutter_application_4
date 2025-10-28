@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import '../../data/discipline_model.dart';
 
 class DisciplineCard extends StatelessWidget {
-  final DisciplineModel discipline;
+  final Discipline discipline;
   final String? groupsLine;
   final VoidCallback? onTap;
   const DisciplineCard({super.key, required this.discipline, this.groupsLine, this.onTap});
@@ -34,7 +34,14 @@ class DisciplineCard extends StatelessWidget {
               style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w700),
             ),
             const SizedBox(height: 8),
+            if (discipline.semester != null && discipline.semester!.isNotEmpty)
+              Row(children: [
+                const Icon(Icons.event, size: 14, color: Colors.grey),
+                const SizedBox(width: 6),
+                Text('Семестр: ${discipline.semester}', style: const TextStyle(color: Colors.grey)),
+              ]),
             if (groupsLine != null && groupsLine!.isNotEmpty) ...[
+              const SizedBox(height: 4),
               Row(
                 children: [
                   const Icon(Icons.group, size: 14, color: Colors.grey),
@@ -49,13 +56,7 @@ class DisciplineCard extends StatelessWidget {
                   ),
                 ],
               ),
-              const SizedBox(height: 4),
             ],
-            Row(children: [
-              const Icon(Icons.access_time, size: 14, color: Colors.grey),
-              const SizedBox(width: 6),
-              Text('${discipline.hours} ch.', style: const TextStyle(color: Colors.grey)),
-            ])
           ],
         ),
       ),

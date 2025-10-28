@@ -7,6 +7,8 @@ import '../../../teachers/data/teacher_model.dart';
 import '../../../teachers/data/teachers_repository.dart';
 import '../../data/group_model.dart';
 import '../../data/groups_repository.dart';
+import '../../../gst/data/group_subject_teacher_model.dart';
+import '../../../gst/data/group_subject_teachers_repository.dart';
 
 class GroupsPage extends StatefulWidget {
   const GroupsPage({super.key});
@@ -19,16 +21,18 @@ class _GroupsPageState extends State<GroupsPage> {
   final _groupsRepo = GroupsRepository();
   final _discRepo = DisciplinesRepository();
   final _teachersRepo = TeachersRepository();
+  final _gstRepo = GroupSubjectTeachersRepository();
 
   final _nameCtrl = TextEditingController();
   final _sizeCtrl = TextEditingController();
   final _courseCtrl = TextEditingController();
   final _specialtyCtrl = TextEditingController();
 
-  List<DisciplineModel> _allDisc = [];
-  List<TeacherModel> _teachers = [];
+  List<Discipline> _allDisc = [];
+  List<Teacher> _teachers = [];
   final Set<int> _selectedDiscIds = {};
   int? _selectedCuratorId;
+  final List<GroupSubjectTeacher> _assignments = [];
 
   @override
   void initState() {
@@ -37,8 +41,8 @@ class _GroupsPageState extends State<GroupsPage> {
   }
 
   Future<void> _load() async {
-    final discs = await _discRepo.getAll(orderBy: 'name ASC');
-    final teachers = await _teachersRepo.getAll(orderBy: 'full_name ASC');
+    final discs = await _discRepo.getAllDisciplines(orderBy: 'name ASC');
+    final teachers = await _teachersRepo.getAllTeachers(orderBy: 'full_name ASC');
     if (!mounted) return;
     setState(() {
       _allDisc = discs;
@@ -50,12 +54,25 @@ class _GroupsPageState extends State<GroupsPage> {
     final model = GroupModel(
       name: _nameCtrl.text.trim(),
       size: int.tryParse(_sizeCtrl.text.trim()),
-      curator: _curatorNameById(_selectedCuratorId),
+      curator: null,
       course: int.tryParse(_courseCtrl.text.trim()),
       specialty: _specialtyCtrl.text.trim().isEmpty ? null : _specialtyCtrl.text.trim(),
       disciplineIds: _selectedDiscIds.toList(),
+      curatorTeacherId: _selectedCuratorId,
+      studentCount: int.tryParse(_sizeCtrl.text.trim()),
     );
-    await _groupsRepo.insert(model);
+    final groupId = await _groupsRepo.insertGroup(model);
+    for (final a in _assignments) {
+      await _gstRepo.insertGST(GroupSubjectTeacher(
+        groupId: groupId,
+        teacherId: a.teacherId,
+        disciplineId: a.disciplineId,
+        totalHours: a.totalHours,
+        startDate: a.startDate,
+        endDate: a.endDate,
+        notes: a.notes,
+      ));
+    }
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Группа сохранена')));
     _nameCtrl.clear();
@@ -65,17 +82,25 @@ class _GroupsPageState extends State<GroupsPage> {
     setState(() {
       _selectedDiscIds.clear();
       _selectedCuratorId = null;
+      _assignments.clear();
     });
   }
 
-  String? _curatorNameById(int? id) {
-    if (id == null) return null;
-    try {
-      return _teachers.firstWhere((t) => t.id == id).fullName;
-    } catch (_) {
-      return null;
+  Future<void> _openAddAssignmentDialog() async {
+    final res = await showDialog<GroupSubjectTeacher>(
+      context: context,
+      builder: (ctx) => _AssignmentDialog(
+        disciplines: _allDisc.where((d) => d.id != null).toList(),
+        teachers: _teachers.where((t) => t.id != null).toList(),
+        gstRepo: _gstRepo,
+      ),
+    );
+    if (res != null) {
+      setState(() => _assignments.add(res));
     }
   }
+
+  // curator name helper no longer used
 
   @override
   void dispose() {
@@ -198,6 +223,38 @@ class _GroupsPageState extends State<GroupsPage> {
                         );
                       }).toList(),
                     ),
+                    const SizedBox(height: 12),
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        const Text('Назначения предметов (преподаватель, часы, даты)', style: TextStyle(fontWeight: FontWeight.w600)),
+                        TextButton.icon(onPressed: _openAddAssignmentDialog, icon: const Icon(Icons.add), label: const Text('Добавить')),
+                      ],
+                    ),
+                    const SizedBox(height: 4),
+                    ..._assignments.map((a) {
+                      final discName = _allDisc.firstWhere((d) => d.id == a.disciplineId, orElse: () => Discipline(name: 'Неизвестно')).name;
+                      final teacherName = _teachers.firstWhere((t) => t.id == a.teacherId, orElse: () => Teacher(fullName: 'Неизвестно')).fullName;
+                      return Container(
+                        margin: const EdgeInsets.only(bottom: 8),
+                        padding: const EdgeInsets.all(12),
+                        decoration: BoxDecoration(
+                          color: Colors.grey.shade50,
+                          borderRadius: BorderRadius.circular(8),
+                          border: Border.all(color: Colors.grey.shade300),
+                        ),
+                        child: Row(
+                          children: [
+                            Expanded(child: Text('$discName — $teacherName, ${a.totalHours} ч.  ${a.startDate ?? ''} — ${a.endDate ?? ''}')),
+                            IconButton(
+                              tooltip: 'Удалить',
+                              icon: const Icon(Icons.delete_outline),
+                              onPressed: () => setState(() => _assignments.remove(a)),
+                            ),
+                          ],
+                        ),
+                      );
+                    }),
                     const SizedBox(height: 20),
                     Row(
                       mainAxisAlignment: MainAxisAlignment.end,
@@ -219,6 +276,142 @@ class _GroupsPageState extends State<GroupsPage> {
             ),
           ),
         ],
+      ),
+    );
+  }
+}
+
+class _AssignmentDialog extends StatefulWidget {
+  final List<Discipline> disciplines;
+  final List<Teacher> teachers;
+  final GroupSubjectTeachersRepository gstRepo;
+
+  const _AssignmentDialog({required this.disciplines, required this.teachers, required this.gstRepo});
+
+  @override
+  State<_AssignmentDialog> createState() => _AssignmentDialogState();
+}
+
+class _AssignmentDialogState extends State<_AssignmentDialog> {
+  int? _disciplineId;
+  int? _teacherId;
+  final _hoursCtrl = TextEditingController();
+  DateTime? _start;
+  DateTime? _end;
+  List<Teacher> _filteredTeachers = [];
+
+  @override
+  void initState() {
+    super.initState();
+    _filteredTeachers = widget.teachers;
+  }
+
+  @override
+  void dispose() {
+    _hoursCtrl.dispose();
+    super.dispose();
+  }
+
+  Future<void> _onDisciplineChanged(int? id) async {
+    setState(() {
+      _disciplineId = id;
+      _teacherId = null;
+      _filteredTeachers = widget.teachers;
+    });
+    if (id != null) {
+      // Фильтруем: показываем только тех преподавателей, у кого уже есть связи по этому предмету
+      final byDisc = await widget.gstRepo.teachersByDiscipline(id);
+      if (mounted && byDisc.isNotEmpty) {
+        setState(() {
+          final ids = byDisc.map((t) => t.id).toSet();
+          _filteredTeachers = widget.teachers.where((t) => t.id != null && ids.contains(t.id)).toList();
+        });
+      }
+    }
+  }
+
+  Future<void> _pickStart() async {
+    final now = DateTime.now();
+    final v = await showDatePicker(context: context, initialDate: _start ?? now, firstDate: DateTime(2020), lastDate: DateTime(2035));
+    if (v != null) setState(() => _start = v);
+  }
+
+  Future<void> _pickEnd() async {
+    final now = DateTime.now();
+    final v = await showDatePicker(context: context, initialDate: _end ?? _start ?? now, firstDate: DateTime(2020), lastDate: DateTime(2035));
+    if (v != null) setState(() => _end = v);
+  }
+
+  void _submit() {
+    final hours = int.tryParse(_hoursCtrl.text.trim()) ?? 0;
+    if (_disciplineId == null || _teacherId == null || hours <= 0) return;
+    final fmt = (DateTime? d) => d == null ? null : '${d.year.toString().padLeft(4, '0')}-${d.month.toString().padLeft(2, '0')}-${d.day.toString().padLeft(2, '0')}';
+    Navigator.pop(context, GroupSubjectTeacher(
+      groupId: 0, // будет заменено вызывающей стороной после insert группы
+      teacherId: _teacherId!,
+      disciplineId: _disciplineId!,
+      totalHours: hours,
+      startDate: fmt(_start),
+      endDate: fmt(_end),
+    ));
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Dialog(
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text('Добавить назначение предмета', style: TextStyle(fontWeight: FontWeight.bold)),
+            const SizedBox(height: 12),
+            DropdownButtonFormField<int>(
+              decoration: const InputDecoration(labelText: 'Предмет'),
+              isExpanded: true,
+              value: _disciplineId,
+              items: [
+                for (final d in widget.disciplines)
+                  if (d.id != null) DropdownMenuItem<int>(value: d.id, child: Text(d.name)),
+              ],
+              onChanged: _onDisciplineChanged,
+            ),
+            const SizedBox(height: 8),
+            DropdownButtonFormField<int>(
+              decoration: const InputDecoration(labelText: 'Преподаватель'),
+              isExpanded: true,
+              value: _teacherId,
+              items: [
+                for (final t in _filteredTeachers)
+                  if (t.id != null) DropdownMenuItem<int>(value: t.id, child: Text(t.fullName)),
+              ],
+              onChanged: (v) => setState(() => _teacherId = v),
+            ),
+            const SizedBox(height: 8),
+            TextField(
+              controller: _hoursCtrl,
+              decoration: const InputDecoration(labelText: 'Всего часов'),
+              keyboardType: TextInputType.number,
+            ),
+            const SizedBox(height: 8),
+            Row(children: [
+              Expanded(child: OutlinedButton(onPressed: _pickStart, child: Text(_start == null ? 'Дата начала' : '${_start!.day.toString().padLeft(2, '0')}.${_start!.month.toString().padLeft(2, '0')}.${_start!.year}'))),
+              const SizedBox(width: 8),
+              Expanded(child: OutlinedButton(onPressed: _pickEnd, child: Text(_end == null ? 'Дата окончания' : '${_end!.day.toString().padLeft(2, '0')}.${_end!.month.toString().padLeft(2, '0')}.${_end!.year}'))),
+            ]),
+            const SizedBox(height: 12),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.end,
+              children: [
+                TextButton(onPressed: () => Navigator.pop(context), child: const Text('Отмена')),
+                const SizedBox(width: 8),
+                ElevatedButton(onPressed: _submit, child: const Text('Добавить')),
+              ],
+            ),
+          ],
+        ),
       ),
     );
   }

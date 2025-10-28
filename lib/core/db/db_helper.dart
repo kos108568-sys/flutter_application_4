@@ -19,7 +19,7 @@ class DBHelper {
     final path = p.join(dbPath, 'app_data.db');
     return await openDatabase(
       path,
-      version: 7, // Увеличиваем версию для добавления таблицы lesson_types
+      version: 14, // Увеличиваем версию для добавления group_subject_teachers и других изменений
       onOpen: (db) async {
         await _ensureSchema(db);
       },
@@ -114,6 +114,99 @@ class DBHelper {
             );
           ''');
         }
+        if (oldVersion < 8) {
+          // Добавляем таблицу lesson_rules
+          await db.execute('''
+            CREATE TABLE IF NOT EXISTS lesson_rules (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              lesson_type_id INTEGER NOT NULL,
+              audience_type_id INTEGER NOT NULL,
+              allowed INTEGER NOT NULL DEFAULT 1,
+              FOREIGN KEY (lesson_type_id) REFERENCES lesson_types(id),
+              FOREIGN KEY (audience_type_id) REFERENCES audience_types(id)
+            );
+          ''');
+        }
+        if (oldVersion < 9) {
+          // Добавляем таблицу equipments
+          await db.execute('''
+            CREATE TABLE IF NOT EXISTS equipments (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              name TEXT NOT NULL,
+              description TEXT
+            );
+          ''');
+        }
+        if (oldVersion < 10) {
+          // Добавляем таблицу buildings
+          await db.execute('''
+            CREATE TABLE IF NOT EXISTS buildings (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              name TEXT NOT NULL,
+              address TEXT,
+              description TEXT
+            );
+          ''');
+        }
+        if (oldVersion < 11) {
+          // Добавляем таблицу time_slots
+          await db.execute('''
+            CREATE TABLE IF NOT EXISTS time_slots (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              order_number INTEGER NOT NULL,
+              start_time TEXT NOT NULL,
+              end_time TEXT NOT NULL,
+              description TEXT
+            );
+          ''');
+        }
+        if (oldVersion < 12) {
+          // Обновляем структуру teachers: добавляем недостающие поля
+          final rows = await db.rawQuery('PRAGMA table_info(teachers)');
+          final existing = rows.map((r) => (r['name'] as String).toLowerCase()).toSet();
+          Future<void> add(String name, String ddl) async {
+            if (!existing.contains(name.toLowerCase())) {
+              await db.execute('ALTER TABLE teachers ADD COLUMN ' + name + ' ' + ddl + ';');
+            }
+          }
+          await add('department_id', 'INTEGER');
+          await add('email', 'TEXT');
+          await add('phone', 'TEXT');
+          await add('notes', 'TEXT');
+          // Примечание: поля curator_group_id и total_load больше не используются
+        }
+        if (oldVersion < 13) {
+          // Добавляем таблицу audience_equipments (M<->N аудитории-оборудование)
+          await db.execute('''
+            CREATE TABLE IF NOT EXISTS audience_equipments (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              audience_id INTEGER NOT NULL,
+              equipment_id INTEGER NOT NULL,
+              FOREIGN KEY (audience_id) REFERENCES audiences(id),
+              FOREIGN KEY (equipment_id) REFERENCES equipments(id),
+              UNIQUE (audience_id, equipment_id)
+            );
+          ''');
+        }
+        if (oldVersion < 14) {
+          // Добавляем таблицу group_subject_teachers (связь группа-дисциплина-преподаватель)
+          await db.execute('''
+            CREATE TABLE IF NOT EXISTS group_subject_teachers (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              group_id INTEGER NOT NULL,
+              teacher_id INTEGER NOT NULL,
+              discipline_id INTEGER NOT NULL,
+              total_hours INTEGER NOT NULL,
+              start_date TEXT,
+              end_date TEXT,
+              notes TEXT,
+              FOREIGN KEY (group_id) REFERENCES groups(id),
+              FOREIGN KEY (teacher_id) REFERENCES teachers(id),
+              FOREIGN KEY (discipline_id) REFERENCES disciplines(id),
+              UNIQUE (group_id, teacher_id, discipline_id)
+            );
+          ''');
+        }
         await _ensureSchema(db);
       },
     );
@@ -124,22 +217,22 @@ class DBHelper {
       CREATE TABLE IF NOT EXISTS audiences (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         name TEXT NOT NULL,
-        type TEXT NOT NULL,
-        capacity INTEGER NOT NULL,
-        boss TEXT,
-        building TEXT,
-        equipment TEXT
+        capacity INTEGER,
+        audience_type_id INTEGER,
+        building_id INTEGER,
+        responsible_teacher_id INTEGER,
+        notes TEXT,
+        FOREIGN KEY (audience_type_id) REFERENCES audience_types(id),
+        FOREIGN KEY (building_id) REFERENCES buildings(id),
+        FOREIGN KEY (responsible_teacher_id) REFERENCES teachers(id)
       );
     ''');
     await db.execute('''
       CREATE TABLE IF NOT EXISTS disciplines (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         name TEXT NOT NULL,
-        teacher TEXT,
-        group_code TEXT,
-        semester INTEGER,
-        hours INTEGER DEFAULT 0,
-        created_at INTEGER
+        lesson_type_id INTEGER,
+        semester TEXT
       );
     ''');
     await db.execute('''
@@ -150,14 +243,24 @@ class DBHelper {
         curator TEXT,
         course INTEGER,
         specialty TEXT,
-        discipline_ids TEXT
+        discipline_ids TEXT,
+        curator_teacher_id INTEGER,
+        student_count INTEGER,
+        department_id INTEGER,
+        notes TEXT,
+        FOREIGN KEY (curator_teacher_id) REFERENCES teachers(id),
+        FOREIGN KEY (department_id) REFERENCES departments(id)
       );
     ''');
     await db.execute('''
       CREATE TABLE IF NOT EXISTS teachers (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         full_name TEXT NOT NULL,
-        curator_group_id INTEGER
+        department_id INTEGER,
+        email TEXT,
+        phone TEXT,
+        notes TEXT,
+        FOREIGN KEY (department_id) REFERENCES departments(id)
       );
     ''');
     await db.execute('''
@@ -225,6 +328,78 @@ class DBHelper {
       );
     ''');
 
+    // Таблица lesson_rules
+    await db.execute('''
+      CREATE TABLE IF NOT EXISTS lesson_rules (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        lesson_type_id INTEGER NOT NULL,
+        audience_type_id INTEGER NOT NULL,
+        allowed INTEGER NOT NULL DEFAULT 1,
+        FOREIGN KEY (lesson_type_id) REFERENCES lesson_types(id),
+        FOREIGN KEY (audience_type_id) REFERENCES audience_types(id)
+      );
+    ''');
+
+    // Таблица equipments
+    await db.execute('''
+      CREATE TABLE IF NOT EXISTS equipments (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        name TEXT NOT NULL,
+        description TEXT
+      );
+    ''');
+
+    // Таблица buildings
+    await db.execute('''
+      CREATE TABLE IF NOT EXISTS buildings (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        name TEXT NOT NULL,
+        address TEXT,
+        description TEXT
+      );
+    ''');
+
+    // Таблица time_slots
+    await db.execute('''
+      CREATE TABLE IF NOT EXISTS time_slots (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        order_number INTEGER NOT NULL,
+        start_time TEXT NOT NULL,
+        end_time TEXT NOT NULL,
+        description TEXT
+      );
+    ''');
+
+    // Таблица audience_equipments (связь аудитории - оборудование)
+    await db.execute('''
+      CREATE TABLE IF NOT EXISTS audience_equipments (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        audience_id INTEGER NOT NULL,
+        equipment_id INTEGER NOT NULL,
+        FOREIGN KEY (audience_id) REFERENCES audiences(id),
+        FOREIGN KEY (equipment_id) REFERENCES equipments(id),
+        UNIQUE (audience_id, equipment_id)
+      );
+    ''');
+
+    // Таблица group_subject_teachers (связь группа-дисциплина-преподаватель)
+    await db.execute('''
+      CREATE TABLE IF NOT EXISTS group_subject_teachers (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        group_id INTEGER NOT NULL,
+        teacher_id INTEGER NOT NULL,
+        discipline_id INTEGER NOT NULL,
+        total_hours INTEGER NOT NULL,
+        start_date TEXT,
+        end_date TEXT,
+        notes TEXT,
+        FOREIGN KEY (group_id) REFERENCES groups(id),
+        FOREIGN KEY (teacher_id) REFERENCES teachers(id),
+        FOREIGN KEY (discipline_id) REFERENCES disciplines(id),
+        UNIQUE (group_id, teacher_id, discipline_id)
+      );
+    ''');
+
     await _ensureGroupColumns(db);
     await _ensureTeacherColumns(db);
     await _ensureDisciplineColumns(db);
@@ -260,11 +435,11 @@ class DBHelper {
       }
     }
 
-    await addColumn('type', 'TEXT');
     await addColumn('capacity', 'INTEGER');
-    await addColumn('boss', 'TEXT');
-    await addColumn('building', 'TEXT');
-    await addColumn('equipment', 'TEXT');
+    await addColumn('audience_type_id', 'INTEGER');
+    await addColumn('building_id', 'INTEGER');
+    await addColumn('responsible_teacher_id', 'INTEGER');
+    await addColumn('notes', 'TEXT');
   }
 
   Future<void> _ensureGroupColumns(Database db) async {
@@ -282,24 +457,35 @@ class DBHelper {
     await addColumn('curator', 'TEXT');
     await addColumn('course', 'INTEGER');
     await addColumn('specialty', 'TEXT');
+    await addColumn('curator_teacher_id', 'INTEGER');
+    await addColumn('student_count', 'INTEGER');
+    await addColumn('department_id', 'INTEGER');
+    await addColumn('notes', 'TEXT');
   }
 
   Future<void> _ensureTeacherColumns(Database db) async {
     final rows = await db.rawQuery('PRAGMA table_info(teachers)');
     final existing = rows.map((row) => (row['name'] as String).toLowerCase()).toSet();
-    if (!existing.contains('curator_group_id')) {
-      await db.execute('ALTER TABLE teachers ADD COLUMN curator_group_id INTEGER;');
+    Future<void> add(String name, String ddl) async {
+      if (!existing.contains(name.toLowerCase())) {
+        await db.execute('ALTER TABLE teachers ADD COLUMN ' + name + ' ' + ddl + ';');
+      }
     }
-    if (!existing.contains('department')) {
-      await db.execute('ALTER TABLE teachers ADD COLUMN department TEXT;');
-    }
+    await add('department_id', 'INTEGER');
+    await add('email', 'TEXT');
+    await add('phone', 'TEXT');
+    await add('notes', 'TEXT');
   }
 
   Future<void> _ensureDisciplineColumns(Database db) async {
     final rows = await db.rawQuery('PRAGMA table_info(disciplines)');
     final existing = rows.map((row) => (row['name'] as String).toLowerCase()).toSet();
-    if (!existing.contains('hours')) {
-      await db.execute('ALTER TABLE disciplines ADD COLUMN hours INTEGER DEFAULT 0;');
+    Future<void> add(String name, String ddl) async {
+      if (!existing.contains(name.toLowerCase())) {
+        await db.execute('ALTER TABLE disciplines ADD COLUMN ' + name + ' ' + ddl + ';');
+      }
     }
+    await add('lesson_type_id', 'INTEGER');
+    await add('semester', 'TEXT');
   }
 }

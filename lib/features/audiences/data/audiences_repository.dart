@@ -1,99 +1,142 @@
 import 'package:sqflite/sqflite.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../../core/db/db_helper.dart';
-import 'audiences_item_model.dart';
+import 'audience_model.dart';
 
 class AudiencesRepository {
   Future<Database> get _db async => DBHelper.instance.database;
+  final _supabase = Supabase.instance.client;
 
-  Future<List<AudiencesItemModel>> getAll({String? search, String? orderBy}) async {
+  Future<List<Audience>> getAllAudiences({String? search, String? orderBy}) async {
     final db = await _db;
     String where = '';
     List<Object?> whereArgs = [];
     if (search != null && search.trim().isNotEmpty) {
-      where = 'WHERE name LIKE ? OR type LIKE ?';
+      where = 'WHERE name LIKE ?';
       final q = '%${search.trim()}%';
-      whereArgs = [q, q];
+      whereArgs = [q];
     }
     final order = orderBy ?? 'id DESC';
     final maps = await db.rawQuery('SELECT * FROM audiences $where ORDER BY $order', whereArgs);
-    return maps.map((m) => AudiencesItemModel.fromMap(m)).toList();
+    return maps.map((m) => Audience.fromMap(m)).toList();
   }
 
-  Future<List<AudiencesItemModel>> getRecent({int limit = 5}) async {
+  Future<List<Audience>> getRecent({int limit = 5}) async {
     final db = await _db;
     final maps = await db.rawQuery('SELECT * FROM audiences ORDER BY id DESC LIMIT ?', [limit]);
-    return maps.map((m) => AudiencesItemModel.fromMap(m)).toList();
+    return maps.map((m) => Audience.fromMap(m)).toList();
   }
 
-  Future<int> insert(AudiencesItemModel item) async {
+  // Сохранение локально
+  Future<int> _insertLocal(Audience a) async {
     final db = await _db;
-    final map = item.toMap()..remove('id');
-    map['updated_at'] = DateTime.now().millisecondsSinceEpoch;
-    map['sync_state'] = 'pending';
-    return await db.insert('audiences', map);
+    return await db.insert('audiences', a.toMap());
   }
 
-  Future<int> update(AudiencesItemModel item) async {
-    if (item.id == null) return 0;
+  // Сохранение локально
+  Future<int> _updateLocal(Audience a) async {
+    if (a.id == null) return 0;
     final db = await _db;
-    final map = item.toMap()..remove('id');
-    map['updated_at'] = DateTime.now().millisecondsSinceEpoch;
-    map['sync_state'] = 'pending';
-    return await db.update('audiences', map, where: 'id = ?', whereArgs: [item.id]);
+    return await db.update('audiences', a.toMap(), where: 'id = ?', whereArgs: [a.id]);
   }
 
-  Future<int> delete(int id) async {
+  // Сохранение локально
+  Future<int> _deleteLocal(int id) async {
     final db = await _db;
-    // Soft delete to allow sync
-    await db.update('audiences', {'deleted': 1, 'updated_at': DateTime.now().millisecondsSinceEpoch, 'sync_state': 'pending'}, where: 'id = ?', whereArgs: [id]);
-    return 1;
+    return await db.delete('audiences', where: 'id = ?', whereArgs: [id]);
   }
 
-  // --- Sync helpers ---
-  Future<List<Map<String, Object?>>> getPendingMaps() async {
-    final db = await _db;
-    final rows = await db.rawQuery("SELECT * FROM audiences WHERE sync_state != 'synced' OR (remote_id IS NULL AND deleted = 0)");
-    return rows;
+  // Отправка данных в Supabase
+  Future<int?> _insertRemote(Audience a) async {
+    final res = await _supabase.from('audiences').insert(a.toMap()).select('id').maybeSingle();
+    return res?['id'] as int?;
   }
 
-  Future<Map<String, Object?>?> findByRemoteId(String remoteId) async {
-    final db = await _db;
-    final rows = await db.rawQuery('SELECT * FROM audiences WHERE remote_id = ? LIMIT 1', [remoteId]);
-    if (rows.isEmpty) return null;
-    return rows.first;
+  // Отправка данных в Supabase
+  Future<bool> _updateRemote(Audience a) async {
+    if (a.id == null) return false;
+    await _supabase.from('audiences').update(a.toMap()).eq('id', a.id!);
+    return true;
   }
 
-  Future<void> setRemoteId(int localId, String remoteId) async {
-    final db = await _db;
-    await db.update('audiences', {'remote_id': remoteId, 'sync_state': 'synced'}, where: 'id = ?', whereArgs: [localId]);
+  // Отправка данных в Supabase
+  Future<bool> _deleteRemote(int id) async {
+    await _supabase.from('audiences').delete().eq('id', id);
+    return true;
   }
 
-  Future<void> markSyncedByLocalId(int localId) async {
-    final db = await _db;
-    await db.update('audiences', {'sync_state': 'synced'}, where: 'id = ?', whereArgs: [localId]);
+  // Публичные методы
+  Future<int> insertAudience(Audience a) async {
+    // Сохранение локально
+    final localId = await _insertLocal(a);
+    // Отправка данных в Supabase
+    try {
+      final remoteId = await _insertRemote(a);
+      if (remoteId != null && remoteId != localId) {
+        final db = await _db;
+        await db.update('audiences', {'id': remoteId}, where: 'id = ?', whereArgs: [localId]);
+        return remoteId;
+      }
+    } catch (_) {
+      // Работа офлайн
+    }
+    return localId;
   }
 
-  Future<void> applyRemoteToLocal(Map<String, dynamic> remote) async {
-    final db = await _db;
-    // Try find by remote_id
-    final existing = await db.rawQuery('SELECT id, updated_at FROM audiences WHERE remote_id = ? LIMIT 1', [remote['id']]);
-    final now = DateTime.now().millisecondsSinceEpoch;
-    final row = {
-      'name': remote['name'],
-      'type': remote['type'],
-      'capacity': remote['capacity'],
-      'boss': remote['boss'],
-      'building': remote['building'],
-      'equipment': remote['equipment'] is String ? remote['equipment'] : null,
-      'remote_id': remote['id'],
-      'updated_at': now,
-      'sync_state': 'synced',
-    };
-    if (existing.isEmpty) {
-      await db.insert('audiences', row..remove('id'));
-    } else {
-      final localId = existing.first['id'] as int;
-      await db.update('audiences', row, where: 'id = ?', whereArgs: [localId]);
+  Future<int> updateAudience(Audience a) async {
+    // Сохранение локально
+    final updated = await _updateLocal(a);
+    // Отправка данных в Supabase
+    try {
+      await _updateRemote(a);
+    } catch (_) {
+      // Работа офлайн
+    }
+    return updated;
+  }
+
+  Future<int> deleteAudience(int id) async {
+    // Сохранение локально
+    final deleted = await _deleteLocal(id);
+    // Отправка данных в Supabase
+    try {
+      await _deleteRemote(id);
+    } catch (_) {
+      // Работа офлайн
+    }
+    return deleted;
+  }
+
+  // Синхронизация при запуске
+  Future<void> syncAudiences() async {
+    try {
+      final db = await _db;
+      final localRows = await db.query('audiences');
+      final remoteRows = await _supabase.from('audiences').select();
+
+      final localById = {for (final r in localRows) r['id'] as int: r};
+      final remoteList = (remoteRows as List).cast<Map<String, dynamic>>();
+      final remoteById = {for (final r in remoteList) r['id'] as int: r};
+
+      // Локальные, которых нет в Supabase → Отправка данных в Supabase
+      for (final entry in localById.entries) {
+        if (!remoteById.containsKey(entry.key)) {
+          try {
+            await _supabase.from('audiences').insert(entry.value);
+          } catch (_) {}
+        }
+      }
+
+      // Удаленные, которых нет локально → Добавить локально
+      for (final entry in remoteById.entries) {
+        if (!localById.containsKey(entry.key)) {
+          try {
+            await db.insert('audiences', entry.value);
+          } catch (_) {}
+        }
+      }
+    } catch (_) {
+      // Работа офлайн
     }
   }
 
@@ -102,33 +145,12 @@ class AudiencesRepository {
     final count = Sqflite.firstIntValue(await db.rawQuery('SELECT COUNT(*) FROM audiences')) ?? 0;
     if (count > 0) return;
     final samples = [
-      AudiencesItemModel(
-        name: '8-232',
-        type: 'Лекция',
-        capacity: 40,
-        boss: 'И. И. Иванов',
-        building: 'Корпус А',
-        equipment: ['Проектор', 'Доска'],
-      ),
-      AudiencesItemModel(
-        name: 'Д-431',
-        type: 'Семинар',
-        capacity: 35,
-        boss: 'П. П. Петров',
-        building: 'Корпус Б',
-        equipment: ['Доска', 'Маркеры'],
-      ),
-      AudiencesItemModel(
-        name: '5-108',
-        type: 'Лаборатория',
-        capacity: 28,
-        boss: 'С. С. Сидоров',
-        building: 'Корпус А',
-        equipment: ['ПК', 'Проектор'],
-      ),
+      Audience(name: 'А-302', capacity: 40, audienceTypeId: null, buildingId: null, responsibleTeacherId: null, notes: 'Лекционная'),
+      Audience(name: 'Д-431', capacity: 35, audienceTypeId: null, buildingId: null, responsibleTeacherId: null, notes: 'Семинар'),
+      Audience(name: 'К-108', capacity: 28, audienceTypeId: null, buildingId: null, responsibleTeacherId: null, notes: 'Лаборатория'),
     ];
     for (final s in samples) {
-      await insert(s);
+      await _insertLocal(s);
     }
   }
 }

@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import '../../data/audiences_item_model.dart';
+import '../../data/audience_model.dart';
 import '../../data/audiences_repository.dart';
 
 class RecentAudiencesWidget extends StatefulWidget {
@@ -11,7 +11,7 @@ class RecentAudiencesWidget extends StatefulWidget {
 
 class _RecentAudiencesWidgetState extends State<RecentAudiencesWidget> {
   final _repo = AudiencesRepository();
-  List<AudiencesItemModel> _recentItems = [];
+  List<Audience> _recentItems = [];
 
   @override
   void initState() {
@@ -31,14 +31,14 @@ class _RecentAudiencesWidgetState extends State<RecentAudiencesWidget> {
   }
 
   Future<void> _openAddAudienceModal() async {
-    final result = await showModalBottomSheet<AudiencesItemModel>(
+    final result = await showModalBottomSheet<Audience>(
       context: context,
       isScrollControlled: true,
       builder: (ctx) => const _AddAudienceBottomSheet(),
     );
 
     if (result != null) {
-      await _repo.insert(result);
+      await _repo.insertAudience(result);
       await _loadRecent();
     }
   }
@@ -99,23 +99,8 @@ class _RecentAudiencesWidgetState extends State<RecentAudiencesWidget> {
 }
 
 class _MiniAudienceCard extends StatelessWidget {
-  final AudiencesItemModel item;
+  final Audience item;
   const _MiniAudienceCard({required this.item});
-
-  Color _getTypeColor(String type) {
-    switch (type.toLowerCase()) {
-      case 'семинар':
-        return Colors.purple;
-      case 'лекция':
-        return Colors.green;
-      case 'лаборатория':
-        return Colors.red;
-      case 'практика':
-        return Colors.orange;
-      default:
-        return Colors.grey;
-    }
-  }
 
   @override
   Widget build(BuildContext context) {
@@ -127,15 +112,6 @@ class _MiniAudienceCard extends StatelessWidget {
       ),
       child: Row(
         children: [
-          Container(
-            width: 10,
-            height: 10,
-            margin: const EdgeInsets.only(right: 8),
-            decoration: BoxDecoration(
-              color: _getTypeColor(item.type),
-              shape: BoxShape.circle,
-            ),
-          ),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -144,12 +120,14 @@ class _MiniAudienceCard extends StatelessWidget {
                     style: const TextStyle(
                         fontWeight: FontWeight.w600, fontSize: 14)),
                 const SizedBox(height: 2),
-                Text(item.type,
-                    style:
-                        const TextStyle(color: Colors.grey, fontSize: 13)),
-                Text(item.boss,
-                    style:
-                        const TextStyle(color: Colors.grey, fontSize: 13)),
+                if (item.capacity != null)
+                  Text('Вместимость: ${item.capacity}',
+                      style:
+                          const TextStyle(color: Colors.grey, fontSize: 13)),
+                if (item.notes != null && item.notes!.isNotEmpty)
+                  Text(item.notes!,
+                      style:
+                          const TextStyle(color: Colors.grey, fontSize: 13)),
               ],
             ),
           ),
@@ -170,41 +148,28 @@ class _AddAudienceBottomSheet extends StatefulWidget {
 class _AddAudienceBottomSheetState extends State<_AddAudienceBottomSheet> {
   final _formKey = GlobalKey<FormState>();
   final _nameCtrl = TextEditingController();
-  final _typeCtrl = TextEditingController();
   final _capacityCtrl = TextEditingController();
-  final _bossCtrl = TextEditingController();
-  final _buildingCtrl = TextEditingController();
-  final _equipmentCtrl = TextEditingController();
+  final _notesCtrl = TextEditingController();
 
   @override
   void dispose() {
     _nameCtrl.dispose();
-    _typeCtrl.dispose();
     _capacityCtrl.dispose();
-    _bossCtrl.dispose();
-    _buildingCtrl.dispose();
-    _equipmentCtrl.dispose();
+    _notesCtrl.dispose();
     super.dispose();
   }
 
   void _submit() {
     if (!_formKey.currentState!.validate()) return;
-    final capacity = int.tryParse(_capacityCtrl.text.trim()) ?? 0;
-    final equipment = _equipmentCtrl.text
-        .split(',')
-        .map((e) => e.trim())
-        .where((e) => e.isNotEmpty)
-        .toList();
+    final capacity = int.tryParse(_capacityCtrl.text.trim());
 
-    final item = AudiencesItemModel(
+    final item = Audience(
       name: _nameCtrl.text.trim(),
-      type: _typeCtrl.text.trim(),
       capacity: capacity,
-      boss: _bossCtrl.text.trim(),
-      building: _buildingCtrl.text.trim().isEmpty
-          ? null
-          : _buildingCtrl.text.trim(),
-      equipment: equipment,
+      audienceTypeId: null,
+      buildingId: null,
+      responsibleTeacherId: null,
+      notes: _notesCtrl.text.trim().isEmpty ? null : _notesCtrl.text.trim(),
     );
 
     Navigator.of(context).pop(item);
@@ -237,30 +202,13 @@ class _AddAudienceBottomSheetState extends State<_AddAudienceBottomSheet> {
                       : null,
                 ),
                 TextFormField(
-                  controller: _typeCtrl,
-                  decoration: const InputDecoration(labelText: 'Тип'),
-                  validator: (v) => (v == null || v.trim().isEmpty)
-                      ? 'Укажите тип'
-                      : null,
-                ),
-                TextFormField(
                   controller: _capacityCtrl,
                   decoration: const InputDecoration(labelText: 'Вместимость'),
                   keyboardType: TextInputType.number,
                 ),
                 TextFormField(
-                  controller: _bossCtrl,
-                  decoration: const InputDecoration(labelText: 'Ответственный'),
-                ),
-                TextFormField(
-                  controller: _buildingCtrl,
-                  decoration: const InputDecoration(labelText: 'Корпус/Здание'),
-                ),
-                TextFormField(
-                  controller: _equipmentCtrl,
-                  decoration: const InputDecoration(
-                    labelText: 'Оборудование (через запятую)',
-                  ),
+                  controller: _notesCtrl,
+                  decoration: const InputDecoration(labelText: 'Заметки'),
                 ),
                 const SizedBox(height: 16),
                 SizedBox(

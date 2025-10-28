@@ -37,7 +37,7 @@ class SchedulesPage extends StatelessWidget {
                     const SizedBox(height: 16),
                     _buildGrid(schedules),
                     const SizedBox(height: 24),
-                    // Кнопки для тестирования
+                    // Кнопки для тестирования и навигации к справочникам
                     Wrap(
                       spacing: 8,
                       runSpacing: 8,
@@ -74,6 +74,42 @@ class SchedulesPage extends StatelessWidget {
                           label: const Text('Тест типов занятий'),
                           style: ElevatedButton.styleFrom(
                             backgroundColor: Colors.green,
+                            foregroundColor: Colors.white,
+                            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+                          ),
+                        ),
+                        ElevatedButton.icon(
+                          onPressed: () {
+                            Navigator.pushNamed(context, '/equipments');
+                          },
+                          icon: const Icon(Icons.devices_other),
+                          label: const Text('Оборудование'),
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: Colors.teal,
+                            foregroundColor: Colors.white,
+                            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+                          ),
+                        ),
+                        ElevatedButton.icon(
+                          onPressed: () {
+                            Navigator.pushNamed(context, '/buildings');
+                          },
+                          icon: const Icon(Icons.location_city),
+                          label: const Text('Корпусы'),
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: Colors.indigo,
+                            foregroundColor: Colors.white,
+                            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+                          ),
+                        ),
+                        ElevatedButton.icon(
+                          onPressed: () {
+                            Navigator.pushNamed(context, '/time-slots');
+                          },
+                          icon: const Icon(Icons.access_time),
+                          label: const Text('Слоты времени'),
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: Colors.deepOrange,
                             foregroundColor: Colors.white,
                             padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
                           ),

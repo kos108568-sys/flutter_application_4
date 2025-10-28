@@ -1,150 +1,200 @@
 import 'package:sqflite/sqflite.dart';
 import '../../../core/db/db_helper.dart';
 import 'discipline_model.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 
 class DisciplinesRepository {
   Future<Database> get _db async => DBHelper.instance.database;
+  final _supabase = Supabase.instance.client;
 
-  Future<List<DisciplineModel>> getAll({
+  Future<List<Discipline>> getAllDisciplines({
     String? search,
-    String? groupCode,
-    int? semester,
-    String orderBy = 'name ASC',
+    String? orderBy = 'name ASC',
   }) async {
     final db = await _db;
     final where = <String>[];
     final args = <Object?>[];
     if (search != null && search.trim().isNotEmpty) {
-      where.add('(name LIKE ? OR teacher LIKE ?)');
+      where.add('(name LIKE ?)');
       final q = '%${search.trim()}%';
-      args..add(q)..add(q);
-    }
-    if (groupCode != null && groupCode.isNotEmpty) {
-      where.add('group_code = ?');
-      args.add(groupCode);
-    }
-    if (semester != null) {
-      where.add('semester = ?');
-      args.add(semester);
+      args.add(q);
     }
     final whereSql = where.isEmpty ? '' : 'WHERE ${where.join(' AND ')}';
     final rows = await db.rawQuery('SELECT * FROM disciplines $whereSql ORDER BY $orderBy', args);
-    return rows.map((e) => DisciplineModel.fromMap(e)).toList();
+    return rows.map((e) => Discipline.fromMap(e)).toList();
   }
 
-  Future<List<DisciplineModel>> getRecent({int limit = 5}) async {
+  // Сохранение локально
+  Future<int> _insertLocal(Discipline m) async {
     final db = await _db;
-    final rows = await db.rawQuery('SELECT * FROM disciplines ORDER BY created_at DESC LIMIT ?', [limit]);
-    return rows.map((e) => DisciplineModel.fromMap(e)).toList();
+    return await db.insert('disciplines', m.toMap());
   }
 
-  Future<int> insert(DisciplineModel m) async {
-    final db = await _db;
-    return await db.insert('disciplines', m.toMap()..remove('id'));
-  }
-
-  Future<int> update(DisciplineModel m) async {
+  // Сохранение локально
+  Future<int> _updateLocal(Discipline m) async {
     if (m.id == null) return 0;
     final db = await _db;
-    return await db.update('disciplines', m.toMap()..remove('id'), where: 'id = ?', whereArgs: [m.id]);
+    return await db.update('disciplines', m.toMap(), where: 'id = ?', whereArgs: [m.id]);
   }
 
-  Future<int> delete(int id) async {
+  // Сохранение локально
+  Future<int> _deleteLocal(int id) async {
     final db = await _db;
     return await db.delete('disciplines', where: 'id = ?', whereArgs: [id]);
   }
 
-  // --- Relations: teachers <-> disciplines ---
-  Future<List<Map<String, Object?>>> teachersLite() async {
-    final db = await _db;
-    return await db.rawQuery('SELECT id, full_name FROM teachers ORDER BY full_name ASC');
+  // Отправка в Supabase
+  Future<int?> _insertRemote(Discipline m) async {
+    final res = await _supabase.from('disciplines').insert(m.toMap()).select('id').maybeSingle();
+    return res?['id'] as int?;
   }
 
-  Future<Set<int>> teacherIdsFor(int disciplineId) async {
-    final db = await _db;
-    final rows = await db.rawQuery('SELECT teacher_id FROM teacher_disciplines WHERE discipline_id = ?', [disciplineId]);
-    return rows.map((e) => (e['teacher_id'] as int)).toSet();
+  // Отправка в Supabase
+  Future<bool> _updateRemote(Discipline m) async {
+    if (m.id == null) return false;
+    await _supabase.from('disciplines').update(m.toMap()).eq('id', m.id!);
+    return true;
   }
 
-  Future<void> setTeachersFor(int disciplineId, List<int> teacherIds) async {
-    final db = await _db;
-    await db.delete('teacher_disciplines', where: 'discipline_id = ?', whereArgs: [disciplineId]);
-    for (final tid in teacherIds.toSet()) {
-      await db.insert('teacher_disciplines', {'teacher_id': tid, 'discipline_id': disciplineId});
+  // Отправка в Supabase
+  Future<bool> _deleteRemote(int id) async {
+    await _supabase.from('disciplines').delete().eq('id', id);
+    return true;
+  }
+
+  // Публичные методы
+  Future<int> insertDiscipline(Discipline d) async {
+    // Сохранение локально
+    final localId = await _insertLocal(d);
+    // Отправка в Supabase
+    try {
+      final remoteId = await _insertRemote(d);
+      if (remoteId != null && remoteId != localId) {
+        final db = await _db;
+        await db.update('disciplines', {'id': remoteId}, where: 'id = ?', whereArgs: [localId]);
+        return remoteId;
+      }
+    } catch (_) {
+      // Работа офлайн
     }
+    return localId;
   }
 
-  // groups <-> disciplines join helpers (for UI cards)
-  Future<Map<int, List<String>>> groupNamesByDiscipline(List<int> disciplineIds) async {
-    if (disciplineIds.isEmpty) return {};
-    final db = await _db;
-    final placeholders = List.filled(disciplineIds.length, '?').join(',');
-    final rows = await db.rawQuery(
-      'SELECT gd.discipline_id AS did, g.name AS gname FROM group_disciplines gd INNER JOIN groups g ON g.id = gd.group_id WHERE gd.discipline_id IN ($placeholders)',
-      disciplineIds,
-    );
-    final map = <int, List<String>>{};
-    for (final r in rows) {
-      final did = r['did'] as int;
-      final name = (r['gname'] as String?) ?? '';
-      if (name.isEmpty) continue;
-      map.putIfAbsent(did, () => <String>[]).add(name);
+  Future<int> updateDiscipline(Discipline d) async {
+    // Сохранение локально
+    final updated = await _updateLocal(d);
+    // Отправка в Supabase
+    try {
+      await _updateRemote(d);
+    } catch (_) {
+      // Работа офлайн
     }
-    return map;
+    return updated;
   }
 
-  // --- Relations: groups <-> disciplines (M<->N) ---
-  Future<Set<int>> groupIdsFor(int disciplineId) async {
-    final db = await _db;
-    final rows = await db.rawQuery(
-      'SELECT group_id FROM group_disciplines WHERE discipline_id = ?',
-      [disciplineId],
-    );
-    return rows.map((e) => (e['group_id'] as int)).toSet();
-  }
-
-  Future<void> setGroupsFor(int disciplineId, List<int> groupIds) async {
-    final db = await _db;
-    await db.delete('group_disciplines', where: 'discipline_id = ?', whereArgs: [disciplineId]);
-    for (final gid in groupIds.toSet()) {
-      await db.insert('group_disciplines', {
-        'group_id': gid,
-        'discipline_id': disciplineId,
-      });
+  Future<int> deleteDiscipline(int id) async {
+    // Сохранение локально
+    final deleted = await _deleteLocal(id);
+    // Отправка в Supabase
+    try {
+      await _deleteRemote(id);
+    } catch (_) {
+      // Работа офлайн
     }
+    return deleted;
   }
 
-  // For groups UI: fetch discipline names for given group ids
-  Future<Map<int, List<String>>> disciplineNamesByGroup(List<int> groupIds) async {
-    if (groupIds.isEmpty) return {};
-    final db = await _db;
-    final placeholders = List.filled(groupIds.length, '?').join(',');
-    final rows = await db.rawQuery(
-      'SELECT gd.group_id AS gid, d.name AS dname FROM group_disciplines gd INNER JOIN disciplines d ON d.id = gd.discipline_id WHERE gd.group_id IN ($placeholders)',
-      groupIds,
-    );
-    final map = <int, List<String>>{};
-    for (final r in rows) {
-      final gid = r['gid'] as int;
-      final name = (r['dname'] as String?) ?? '';
-      if (name.isEmpty) continue;
-      map.putIfAbsent(gid, () => <String>[]).add(name);
+  // Синхронизация при запуске
+  Future<void> syncDisciplines() async {
+    try {
+      final db = await _db;
+      final localRows = await db.query('disciplines');
+      final remoteRows = await _supabase.from('disciplines').select();
+
+      final localById = {for (final r in localRows) r['id'] as int: r};
+      final remoteList = (remoteRows as List).cast<Map<String, dynamic>>();
+      final remoteById = {for (final r in remoteList) r['id'] as int: r};
+
+      // Локальные, которых нет в Supabase → Отправка в Supabase
+      for (final entry in localById.entries) {
+        if (!remoteById.containsKey(entry.key)) {
+          try {
+            await _supabase.from('disciplines').insert(entry.value);
+          } catch (_) {}
+        }
+      }
+
+      // Удаленные, которых нет локально → Добавить локально
+      for (final entry in remoteById.entries) {
+        if (!localById.containsKey(entry.key)) {
+          try {
+            await db.insert('disciplines', entry.value);
+          } catch (_) {}
+        }
+      }
+    } catch (_) {
+      // Работа офлайн
     }
-    return map;
   }
 
   Future<void> seedIfEmpty() async {
     final db = await _db;
     final count = Sqflite.firstIntValue(await db.rawQuery('SELECT COUNT(*) FROM disciplines')) ?? 0;
     if (count > 0) return;
-    final samples = <DisciplineModel>[
-      DisciplineModel(name: 'Primer A', teacher: 'Prepod 1', groupCode: 'PO-42', semester: 1, hours: 40),
-      DisciplineModel(name: 'Primer B', teacher: 'Prepod 1', groupCode: 'PO-42', semester: 1, hours: 72),
-      DisciplineModel(name: 'Primer C', teacher: 'Prepod 1', groupCode: 'PO-41', semester: 2, hours: 36),
+    final samples = <Discipline>[
+      Discipline(name: 'Математика', lessonTypeId: null, semester: '1'),
+      Discipline(name: 'Информатика', lessonTypeId: null, semester: '1'),
+      Discipline(name: 'Физика', lessonTypeId: null, semester: '2'),
     ];
     for (final s in samples) {
-      await insert(s);
+      await _insertLocal(s);
     }
+  }
+
+  // Возвращает карту: groupId -> список названий дисциплин для группы
+  Future<Map<int, List<String>>> disciplineNamesByGroup(List<int> groupIds) async {
+    if (groupIds.isEmpty) return <int, List<String>>{};
+    final db = await _db;
+    final placeholders = List.filled(groupIds.length, '?').join(',');
+    final rows = await db.rawQuery(
+      'SELECT gd.group_id AS gid, d.name AS dname '
+      'FROM group_disciplines gd '
+      'JOIN disciplines d ON d.id = gd.discipline_id '
+      'WHERE gd.group_id IN ($placeholders) '
+      'ORDER BY d.name ASC',
+      groupIds,
+    );
+    final result = <int, List<String>>{};
+    for (final r in rows) {
+      final gid = r['gid'] as int;
+      final name = r['dname'] as String;
+      result.putIfAbsent(gid, () => <String>[]).add(name);
+    }
+    return result;
+  }
+
+  // === Teacher links (many-to-many via teacher_disciplines) ===
+  Future<List<int>> getTeacherIdsByDiscipline(int disciplineId) async {
+    final db = await _db;
+    final rows = await db.rawQuery('SELECT teacher_id FROM teacher_disciplines WHERE discipline_id = ?', [disciplineId]);
+    return rows.map((e) => (e['teacher_id'] as int)).toList();
+  }
+
+  Future<void> setDisciplineTeachers(int disciplineId, List<int> teacherIds) async {
+    final db = await _db;
+    final batch = db.batch();
+    batch.delete('teacher_disciplines', where: 'discipline_id = ?', whereArgs: [disciplineId]);
+    for (final tid in teacherIds.toSet()) {
+      batch.insert('teacher_disciplines', {'teacher_id': tid, 'discipline_id': disciplineId}, conflictAlgorithm: ConflictAlgorithm.ignore);
+    }
+    await batch.commit(noResult: true);
+    try {
+      await _supabase.from('teacher_disciplines').delete().eq('discipline_id', disciplineId);
+      if (teacherIds.isNotEmpty) {
+        final payload = teacherIds.toSet().map((t) => {'teacher_id': t, 'discipline_id': disciplineId}).toList();
+        await _supabase.from('teacher_disciplines').insert(payload);
+      }
+    } catch (_) {}
   }
 }
 

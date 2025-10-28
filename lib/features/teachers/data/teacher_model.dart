@@ -1,22 +1,51 @@
-class TeacherModel {
-  int? id;
-  String fullName;
-  int? curatorGroupId;
-  String? department; // otdelenie
-  int workloadHours; // raschet na osnove predmetov
-  List<int> disciplineIds;
-  List<int> audienceIds;
-  List<int> taughtGroupIds;
+class Teacher {
+  final int? id;
+  final String fullName;
+  final int? departmentId;
+  final String? email;
+  final String? phone;
+  final String? notes;
 
-  TeacherModel({
+  Teacher({
     this.id,
     required this.fullName,
-    this.curatorGroupId,
-    this.department,
-    this.workloadHours = 0,
-    required this.disciplineIds,
-    required this.audienceIds,
-    List<int>? taughtGroupIds,
-  }) : taughtGroupIds = taughtGroupIds ?? const [];
+    this.departmentId,
+    this.email,
+    this.phone,
+    this.notes,
+  });
+
+  Map<String, dynamic> toMap() => {
+        'id': id,
+        'full_name': fullName,
+        'department_id': departmentId,
+        'email': email,
+        'phone': phone,
+        'notes': notes,
+      };
+
+  factory Teacher.fromMap(Map<String, dynamic> map) => Teacher(
+        id: map['id'] as int?,
+        fullName: map['full_name'] as String,
+        departmentId: map['department_id'] as int?,
+        email: _asNullableString(map['email']),
+        phone: _asNullableString(map['phone']),
+        notes: _asNullableString(map['notes']),
+      );
+
+  Map<String, dynamic> toSupabaseMap() => {
+        if (id != null) 'id': id,
+        'full_name': fullName,
+        'department_id': departmentId,
+        'email': email,
+        'phone': phone,
+        'notes': notes,
+      };
+}
+
+String? _asNullableString(dynamic value) {
+  if (value == null) return null;
+  if (value is String) return value;
+  return value.toString();
 }
 

@@ -10,6 +10,7 @@ import '../../data/groups_repository.dart';
 import '../widgets/group_card.dart';
 import '../widgets/group_filter_bar.dart';
 import '../widgets/recent_groups_widget.dart';
+import 'groups_page.dart';
 
 class GroupsScreen extends StatefulWidget {
   const GroupsScreen({super.key});
@@ -25,9 +26,9 @@ class _GroupsScreenState extends State<GroupsScreen> {
 
   List<GroupModel> all = [];
   List<GroupModel> filtered = [];
-  List<TeacherModel> _teachers = [];
-  List<DisciplineModel> _disciplines = [];
-  Map<int, String> _teacherNames = {};
+  List<Teacher> _teachers = [];
+  List<Discipline> _disciplines = [];
+  // removed unused _teacherNames map
   Map<int, List<String>> _discNamesByGroup = {};
   bool isGrid = true;
 
@@ -39,9 +40,9 @@ class _GroupsScreenState extends State<GroupsScreen> {
 
   Future<void> _init() async {
     await _repo.seedIfEmpty();
-    final items = await _repo.getAll(orderBy: 'name ASC');
-    final teachers = await _teachersRepo.getAll(orderBy: 'full_name ASC');
-    final discs = await _discRepo.getAll(orderBy: 'name ASC');
+    final items = await _repo.getAllGroups(orderBy: 'name ASC');
+    final teachers = await _teachersRepo.getAllTeachers(orderBy: 'full_name ASC');
+    final discs = await _discRepo.getAllDisciplines(orderBy: 'name ASC');
     final gidList = items.where((g) => g.id != null).map((g) => g.id!).toList();
     final discNamesMap = await _discRepo.disciplineNamesByGroup(gidList);
     if (!mounted) return;
@@ -50,9 +51,13 @@ class _GroupsScreenState extends State<GroupsScreen> {
       filtered = List.of(items);
       _teachers = teachers.where((t) => t.id != null).toList();
       _disciplines = discs;
-      _teacherNames = {for (final t in _teachers) t.id!: t.fullName};
       _discNamesByGroup = discNamesMap;
     });
+  }
+
+  Future<void> _openCreateGroup() async {
+    await Navigator.push(context, MaterialPageRoute(builder: (_) => const GroupsPage()));
+    await _init();
   }
 
   void _onFilterChanged(String q) {
@@ -98,7 +103,7 @@ class _GroupsScreenState extends State<GroupsScreen> {
     final size = TextEditingController(text: (g.size ?? '').toString());
     final course = TextEditingController(text: (g.course ?? '').toString());
     final specialty = TextEditingController(text: g.specialty ?? '');
-    int? curatorId = _teacherIdByName(g.curator);
+    int? curatorId = g.curatorTeacherId ?? _teacherIdByName(g.curator);
     final selectedDisc = {...g.disciplineIds};
 
     Future<bool> confirmDelete() async {
@@ -209,7 +214,7 @@ class _GroupsScreenState extends State<GroupsScreen> {
                         onPressed: () async {
                           if (await confirmDelete()) {
                             Navigator.pop(ctx);
-                            if (g.id != null) await _repo.delete(g.id!);
+                            if (g.id != null) await _repo.deleteGroup(g.id!);
                             await _init();
                           }
                         },
@@ -218,8 +223,8 @@ class _GroupsScreenState extends State<GroupsScreen> {
                       ElevatedButton(
                         onPressed: () {
                           g.name = name.text.trim();
-                          g.curator = curatorId == null ? null : _teacherNames[curatorId];
-                          g.size = int.tryParse(size.text.trim());
+                          g.curatorTeacherId = curatorId;
+                          g.studentCount = int.tryParse(size.text.trim());
                           g.course = int.tryParse(course.text.trim());
                           g.specialty = specialty.text.trim().isEmpty ? null : specialty.text.trim();
                           g.disciplineIds = selectedDisc.toList();
@@ -236,7 +241,7 @@ class _GroupsScreenState extends State<GroupsScreen> {
         ),
       ),
     );
-    await _repo.update(g);
+    await _repo.updateGroup(g);
     await _init();
   }
 
@@ -257,11 +262,23 @@ class _GroupsScreenState extends State<GroupsScreen> {
                 children: [
                   const Text('Groups list', style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold)),
                   const SizedBox(height: 16),
-                  GroupFilterBar(
-                    onFilterChanged: _onFilterChanged,
-                    onSortChanged: _onSortChanged,
-                    onViewChanged: _onViewChanged,
-                    isGridView: isGrid,
+                  Row(
+                    children: [
+                      Expanded(
+                        child: GroupFilterBar(
+                          onFilterChanged: _onFilterChanged,
+                          onSortChanged: _onSortChanged,
+                          onViewChanged: _onViewChanged,
+                          isGridView: isGrid,
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      ElevatedButton.icon(
+                        onPressed: _openCreateGroup,
+                        icon: const Icon(Icons.add),
+                        label: const Text('Создать группу'),
+                      ),
+                    ],
                   ),
                   const SizedBox(height: 16),
                   Expanded(

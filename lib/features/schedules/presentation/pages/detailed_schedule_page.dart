@@ -9,7 +9,7 @@ import '../../../disciplines/data/discipline_model.dart';
 import '../../../teachers/data/teachers_repository.dart';
 import '../../../teachers/data/teacher_model.dart';
 import '../../../audiences/data/audiences_repository.dart';
-import '../../../audiences/data/audiences_item_model.dart';
+import '../../../audiences/data/audience_model.dart';
 import '../../../groups/data/groups_repository.dart';
 import '../../../groups/data/group_model.dart';
 import 'package:flutter/services.dart';
@@ -38,9 +38,9 @@ class _DetailedSchedulePageState extends State<DetailedSchedulePage> {
 
   List<LessonModel> lessons = [];
   List<String> daysOfWeek = [];
-  List<DisciplineModel> allDisciplines = [];
-  List<TeacherModel> allTeachers = [];
-  List<AudiencesItemModel> allAudiences = [];
+  List<Discipline> allDisciplines = [];
+  List<Teacher> allTeachers = [];
+  List<Audience> allAudiences = [];
   List<GroupModel> allGroups = [];
   
   // Search & drag
@@ -64,10 +64,10 @@ class _DetailedSchedulePageState extends State<DetailedSchedulePage> {
     await teachersRepo.seedIfEmpty();
     await audiencesRepo.seedIfEmpty();
 
-    allGroups = await groupsRepo.getAll(orderBy: 'name ASC');
-    allDisciplines = await disciplinesRepo.getAll(orderBy: 'name ASC');
-    allTeachers = await teachersRepo.getAll(orderBy: 'full_name ASC');
-    allAudiences = await audiencesRepo.getAll(orderBy: 'name ASC');
+    allGroups = await groupsRepo.getAllGroups(orderBy: 'name ASC');
+    allDisciplines = await disciplinesRepo.getAllDisciplines(orderBy: 'name ASC');
+    allTeachers = await teachersRepo.getAllTeachers(orderBy: 'full_name ASC');
+    allAudiences = await audiencesRepo.getAllAudiences(orderBy: 'name ASC');
 
     if (allGroups.isNotEmpty) {
       selectedGroupId = allGroups.first.id ?? 0;
@@ -415,8 +415,8 @@ class _DetailedSchedulePageState extends State<DetailedSchedulePage> {
   }
 
   Widget _buildLessonCardContent(LessonModel lesson) {
-    final discipline = allDisciplines.firstWhere((d) => d.id == lesson.disciplineId, orElse: () => DisciplineModel(name: 'Неизвестно', teacher: ''));
-    final teacher = allTeachers.firstWhere((t) => t.id == lesson.teacherId, orElse: () => TeacherModel(fullName: 'Неизвестно', disciplineIds: [], audienceIds: []));
+    final discipline = allDisciplines.firstWhere((d) => d.id == lesson.disciplineId, orElse: () => Discipline(name: 'Неизвестно'));
+    final teacher = allTeachers.firstWhere((t) => t.id == lesson.teacherId, orElse: () => Teacher(fullName: 'Неизвестно'));
     return Padding(
       padding: const EdgeInsets.all(7.0),
       child: Column(
@@ -431,9 +431,9 @@ class _DetailedSchedulePageState extends State<DetailedSchedulePage> {
   }
 
     Widget _buildLessonCard(LessonModel lesson, int pairIdx, int dayIdx) {
-    final discipline = allDisciplines.firstWhere((d) => d.id == lesson.disciplineId, orElse: () => DisciplineModel(name: 'Неизвестно', teacher: ''));
-    final teacher = allTeachers.firstWhere((t) => t.id == lesson.teacherId, orElse: () => TeacherModel(fullName: 'Неизвестно', disciplineIds: [], audienceIds: []));
-    final audience = allAudiences.firstWhere((a) => a.id == lesson.audienceId, orElse: () => AudiencesItemModel(name: 'Неизвестно', type: '', capacity: 0, boss: '', equipment: []));
+    final discipline = allDisciplines.firstWhere((d) => d.id == lesson.disciplineId, orElse: () => Discipline(name: 'Неизвестно'));
+    final teacher = allTeachers.firstWhere((t) => t.id == lesson.teacherId, orElse: () => Teacher(fullName: 'Неизвестно'));
+    final audience = allAudiences.firstWhere((a) => a.id == lesson.audienceId, orElse: () => Audience(name: 'Неизвестно'));
 
     return IgnorePointer(
       ignoring: !isEditMode,
@@ -560,7 +560,7 @@ class _DetailedSchedulePageState extends State<DetailedSchedulePage> {
                               textEditingController.clear();
                             } else {
                               // Если не было выбора, восстанавливаем исходное значение
-                              if (disciplineId == null || allDisciplines.firstWhere((d) => d.id == disciplineId, orElse: () => DisciplineModel(name: '', teacher: '')).name != textEditingController.text) {
+                              if (disciplineId == null || allDisciplines.firstWhere((d) => d.id == disciplineId, orElse: () => Discipline(name: '')).name != textEditingController.text) {
                                 if (disciplineId != null) {
                                   textEditingController.text = allDisciplines.firstWhere((d) => d.id == disciplineId).name;
                                 }
@@ -628,7 +628,7 @@ class _DetailedSchedulePageState extends State<DetailedSchedulePage> {
                               textEditingController.clear();
                             } else {
                               // Если не было выбора, восстанавливаем исходное значение
-                              if (teacherId == null || allTeachers.firstWhere((t) => t.id == teacherId, orElse: () => TeacherModel(fullName: '', disciplineIds: [], audienceIds: [])).fullName != textEditingController.text) {
+                              if (teacherId == null || allTeachers.firstWhere((t) => t.id == teacherId, orElse: () => Teacher(fullName: '')).fullName != textEditingController.text) {
                                 if (teacherId != null) {
                                   textEditingController.text = allTeachers.firstWhere((t) => t.id == teacherId).fullName;
                                 }
@@ -681,7 +681,7 @@ class _DetailedSchedulePageState extends State<DetailedSchedulePage> {
                               textEditingController.clear();
                             } else {
                               // Если не было выбора, восстанавливаем исходное значение
-                              if (audienceId == null || allAudiences.firstWhere((a) => a.id == audienceId, orElse: () => AudiencesItemModel(name: '', type: '', capacity: 0, boss: '', equipment: [])).name != textEditingController.text) {
+                              if (audienceId == null || allAudiences.firstWhere((a) => a.id == audienceId, orElse: () => Audience(name: '')).name != textEditingController.text) {
                                 if (audienceId != null) {
                                   textEditingController.text = allAudiences.firstWhere((a) => a.id == audienceId).name;
                                 }

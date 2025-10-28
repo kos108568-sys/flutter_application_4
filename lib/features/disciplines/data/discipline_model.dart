@@ -1,41 +1,34 @@
-class DisciplineModel {
-  int? id;
-  String name;
-  String teacher;
-  String? groupCode;
-  int? semester;
-  int hours;
-  int createdAt; // epoch millis
+class Discipline {
+  final int? id;
+  final String name;
+  final int? lessonTypeId;
+  final String? semester;
 
-  DisciplineModel({
+  Discipline({
     this.id,
     required this.name,
-    required this.teacher,
-    this.groupCode,
+    this.lessonTypeId,
     this.semester,
-    int? hours,
-    int? createdAt,
-  })  : hours = hours ?? 0,
-        createdAt = createdAt ?? DateTime.now().millisecondsSinceEpoch;
+  });
 
   Map<String, dynamic> toMap() => {
         'id': id,
         'name': name,
-        'teacher': teacher,
-        'group_code': groupCode,
+        'lesson_type_id': lessonTypeId,
         'semester': semester,
-        'hours': hours,
-        'created_at': createdAt,
       };
 
-  factory DisciplineModel.fromMap(Map<String, dynamic> map) => DisciplineModel(
+  factory Discipline.fromMap(Map<String, dynamic> map) => Discipline(
         id: map['id'] as int?,
         name: map['name'] as String,
-        teacher: (map['teacher'] as String?) ?? '',
-        groupCode: map['group_code'] as String?,
-        semester: (map['semester'] as num?)?.toInt(),
-        hours: (map['hours'] as num?)?.toInt() ?? 0,
-        createdAt: (map['created_at'] as num?)?.toInt() ?? DateTime.now().millisecondsSinceEpoch,
+        lessonTypeId: map['lesson_type_id'] as int?,
+        semester: _asNullableString(map['semester']),
       );
+}
+
+String? _asNullableString(dynamic value) {
+  if (value == null) return null;
+  if (value is String) return value;
+  return value.toString();
 }
 

@@ -2,10 +2,13 @@ import 'package:flutter/material.dart';
 import 'package:flutter_application_4/core/widgets/sidebar_menu.dart';
 import '../../data/discipline_model.dart';
 import '../../data/disciplines_repository.dart';
-import '../../../groups/data/groups_repository.dart';
 import '../widgets/discipline_card.dart';
 import '../widgets/discipline_filter_bar.dart';
 import '../widgets/recent_disciplines_widget.dart';
+import '../../../lesson_types/data/lesson_types_repository.dart';
+import '../../../lesson_types/data/lesson_type_model.dart';
+import '../../../teachers/data/teachers_repository.dart';
+import '../../../teachers/data/teacher_model.dart';
 
 class DisciplinesPage extends StatefulWidget {
   const DisciplinesPage({super.key});
@@ -16,10 +19,14 @@ class DisciplinesPage extends StatefulWidget {
 
 class _DisciplinesPageState extends State<DisciplinesPage> {
   final _repo = DisciplinesRepository();
-  List<DisciplineModel> all = [];
-  List<DisciplineModel> filtered = [];
+  final _lessonTypesRepo = LessonTypesRepository();
+  final _teachersRepo = TeachersRepository();
+  List<Discipline> all = [];
+  List<Discipline> filtered = [];
   bool isGrid = true;
   Map<int, List<String>> _groupsByDiscipline = {};
+  List<LessonType> _lessonTypes = [];
+  List<Teacher> _teachers = [];
 
   @override
   void initState() {
@@ -29,7 +36,9 @@ class _DisciplinesPageState extends State<DisciplinesPage> {
 
   Future<void> _init() async {
     await _repo.seedIfEmpty();
-    final items = await _repo.getAll(orderBy: 'name ASC');
+    try { _lessonTypes = await _lessonTypesRepo.getAllLessonTypes(orderBy: 'name ASC'); } catch (_) {}
+    try { _teachers = await _teachersRepo.getAllTeachers(orderBy: 'full_name ASC'); } catch (_) {}
+    final items = await _repo.getAllDisciplines(orderBy: 'name ASC');
     if (!mounted) return;
     setState(() {
       all = items;
@@ -40,10 +49,7 @@ class _DisciplinesPageState extends State<DisciplinesPage> {
 
   void _onFilterChanged(String q) {
     setState(() {
-      filtered = all
-          .where((e) => e.name.toLowerCase().contains(q.toLowerCase()) ||
-              e.teacher.toLowerCase().contains(q.toLowerCase()))
-          .toList();
+      filtered = all.where((e) => e.name.toLowerCase().contains(q.toLowerCase())).toList();
     });
     _refreshGroupNamesForFiltered();
   }
@@ -51,9 +57,6 @@ class _DisciplinesPageState extends State<DisciplinesPage> {
   void _onSortChanged(String by) {
     setState(() {
       switch (by) {
-        case 'teacher':
-          filtered.sort((a, b) => a.teacher.compareTo(b.teacher));
-          break;
         case 'name':
         default:
           filtered.sort((a, b) => a.name.compareTo(b.name));
@@ -64,14 +67,11 @@ class _DisciplinesPageState extends State<DisciplinesPage> {
 
   void _onViewChanged(bool grid) => setState(() => isGrid = grid);
 
-  Future<void> _editDiscipline(DisciplineModel d) async {
+  Future<void> _editDiscipline(Discipline d) async {
     final name = TextEditingController(text: d.name);
-    final hours = TextEditingController(text: d.hours.toString());
-    final semester = TextEditingController(text: d.semester?.toString() ?? '');
-    final groups = await GroupsRepository().getAll(orderBy: 'name ASC');
-    final teachersLite = await _repo.teachersLite();
-    final selectedTeachers = d.id == null ? <int>{} : await _repo.teacherIdsFor(d.id!);
-    final selectedGroups = d.id == null ? <int>{} : await _repo.groupIdsFor(d.id!);
+    final semester = TextEditingController(text: d.semester ?? '');
+    int? lessonTypeId = d.lessonTypeId;
+    final selectedTeacherIds = <int>{...await _repo.getTeacherIdsByDiscipline(d.id ?? -1)};
 
     await showDialog(
       context: context,
@@ -88,57 +88,45 @@ class _DisciplinesPageState extends State<DisciplinesPage> {
                 const SizedBox(height: 12),
                 TextField(controller: name, decoration: const InputDecoration(labelText: 'Nazvanie')),
                 const SizedBox(height: 8),
-                TextField(controller: hours, decoration: const InputDecoration(labelText: 'Chasy'), keyboardType: TextInputType.number),
+                DropdownButtonFormField<int?>(
+                  value: lessonTypeId,
+                  isExpanded: true,
+                  decoration: const InputDecoration(labelText: 'Tip zanyatiya'),
+                  items: [
+                    const DropdownMenuItem<int?>(value: null, child: Text('Ne vybran')),
+                    ..._lessonTypes.where((lt) => lt.id != null).map((lt) => DropdownMenuItem<int?>(value: lt.id, child: Text(lt.name))),
+                  ],
+                  onChanged: (v) => lessonTypeId = v,
+                ),
                 const SizedBox(height: 8),
-                Row(children: [
-                  ElevatedButton(
-                    onPressed: () async {
-                      final result = await showDialog<Set<int>>(
-                        context: context,
-                        builder: (_) => _SelectItemsDialog(
-                          title: 'Vybor grupp',
-                          hint: 'Poisk grupp...',
-                          items: [for (final g in groups.where((g) => g.id != null)) _SelectableItem(g.id!, g.name)],
-                          initiallySelected: selectedGroups,
-                        ),
-                      );
-                      if (result != null) {
-                        selectedGroups
-                          ..clear()
-                          ..addAll(result);
-                      }
-                    },
-                    child: const Text("Vybrat' gruppy"),
-                  ),
-                  const SizedBox(width: 12),
-                  Text('Vybrano grupp: ' + selectedGroups.length.toString()),
-                ]),
-                const SizedBox(height: 8),
-                TextField(controller: semester, decoration: const InputDecoration(labelText: 'Semestr (1/2)'), keyboardType: TextInputType.number),
-                const SizedBox(height: 8),
-                Row(children: [
-                  ElevatedButton(
-                    onPressed: () async {
-                      final result = await showDialog<Set<int>>(
-                        context: context,
-                        builder: (_) => _SelectItemsDialog(
-                          title: 'Vybor prepodavatelei',
-                          hint: 'Poisk prepodavatelei...',
-                          items: [for (final t in teachersLite) _SelectableItem(t['id'] as int, t['full_name'] as String)],
-                          initiallySelected: selectedTeachers,
-                        ),
-                      );
-                      if (result != null) {
-                        selectedTeachers
-                          ..clear()
-                          ..addAll(result);
-                      }
-                    },
-                    child: const Text("Vybrat' prepodavatelei"),
-                  ),
-                  const SizedBox(width: 12),
-                  Text('Vybrano: ' + selectedTeachers.length.toString()),
-                ]),
+                TextField(controller: semester, decoration: const InputDecoration(labelText: 'Semestr'), keyboardType: TextInputType.text),
+                const SizedBox(height: 12),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    const Text('Prepodavateli', style: TextStyle(fontWeight: FontWeight.w600)),
+                    TextButton.icon(
+                      onPressed: () async {
+                        final set = await showDialog<Set<int>>(
+                          context: ctx,
+                          builder: (c) => _SelectItemsDialog(
+                            title: 'Vybrat\' prepodavatelei',
+                            hint: 'Poisk...',
+                            items: [for (final t in _teachers) if (t.id != null) _SelectableItem(t.id!, t.fullName)],
+                            initiallySelected: selectedTeacherIds,
+                          ),
+                        );
+                        if (set != null) {
+                          selectedTeacherIds
+                            ..clear()
+                            ..addAll(set);
+                        }
+                      },
+                      icon: const Icon(Icons.edit),
+                      label: const Text('Naznachit\''),
+                    ),
+                  ],
+                ),
                 const SizedBox(height: 16),
                 SizedBox(
                   width: double.infinity,
@@ -153,24 +141,23 @@ class _DisciplinesPageState extends State<DisciplinesPage> {
         ),
       ),
     );
-    d.name = name.text.trim();
-    d.hours = int.tryParse(hours.text.trim()) ?? d.hours;
-    // M<->N svyaz: ne ispol'zuem groupCode dlya sohraneniya
-    d.groupCode = null;
-    d.semester = int.tryParse(semester.text.trim());
-    await _repo.update(d);
-    if (d.id != null) {
-      await _repo.setTeachersFor(d.id!, selectedTeachers.toList());
-      await _repo.setGroupsFor(d.id!, selectedGroups.toList());
+    final updated = Discipline(
+      id: d.id,
+      name: name.text.trim(),
+      lessonTypeId: lessonTypeId,
+      semester: semester.text.trim().isEmpty ? null : semester.text.trim(),
+    );
+    await _repo.updateDiscipline(updated);
+    if (updated.id != null) {
+      await _repo.setDisciplineTeachers(updated.id!, selectedTeacherIds.toList());
     }
     await _init();
   }
 
   Future<void> _refreshGroupNamesForFiltered() async {
-    final ids = filtered.where((e) => e.id != null).map((e) => e.id!).toList();
-    final map = await _repo.groupNamesByDiscipline(ids);
+    // Упрощено: связи групп убраны в текущей версии UI
     if (!mounted) return;
-    setState(() => _groupsByDiscipline = map);
+    setState(() => _groupsByDiscipline = {});
   }
 
   @override

@@ -1,6 +1,6 @@
 ﻿import 'package:flutter/material.dart';
 import 'package:flutter_application_4/core/widgets/sidebar_menu.dart';
-import '../../data/audiences_item_model.dart';
+import '../../data/audience_model.dart';
 import '../../data/audiences_repository.dart';
 import '../widgets/audience_card.dart';
 import '../widgets/audience_filter_bar.dart';
@@ -16,8 +16,8 @@ class AudiencesScreen extends StatefulWidget {
 
 class _AudiencesPageState extends State<AudiencesScreen> {
   final _repo = AudiencesRepository();
-  List<AudiencesItemModel> allItems = [];
-  List<AudiencesItemModel> filteredItems = [];
+  List<Audience> allItems = [];
+  List<Audience> filteredItems = [];
   bool isGridView = true;
 
   @override
@@ -28,7 +28,7 @@ class _AudiencesPageState extends State<AudiencesScreen> {
 
   Future<void> _init() async {
     await _repo.seedIfEmpty();
-    final items = await _repo.getAll(orderBy: 'name ASC');
+    final items = await _repo.getAllAudiences(orderBy: 'name ASC');
     if (!mounted) return;
     setState(() {
       allItems = items;
@@ -38,11 +38,7 @@ class _AudiencesPageState extends State<AudiencesScreen> {
 
   void _onFilterChanged(String query) {
     setState(() {
-      filteredItems = allItems
-          .where((item) =>
-              item.name.toLowerCase().contains(query.toLowerCase()) ||
-              item.type.toLowerCase().contains(query.toLowerCase()))
-          .toList();
+      filteredItems = allItems.where((item) => item.name.toLowerCase().contains(query.toLowerCase())).toList();
     });
   }
 
@@ -52,11 +48,8 @@ class _AudiencesPageState extends State<AudiencesScreen> {
         case 'name':
           filteredItems.sort((a, b) => a.name.compareTo(b.name));
           break;
-        case 'type':
-          filteredItems.sort((a, b) => a.type.compareTo(b.type));
-          break;
         case 'capacity':
-          filteredItems.sort((a, b) => a.capacity.compareTo(b.capacity));
+          filteredItems.sort((a, b) => (a.capacity ?? 0).compareTo(b.capacity ?? 0));
           break;
       }
     });
@@ -66,26 +59,12 @@ class _AudiencesPageState extends State<AudiencesScreen> {
     setState(() => isGridView = grid);
   }
 
-  Future<void> _showEditAudienceDialog(AudiencesItemModel audience) async {
+  Future<void> _showEditAudienceDialog(Audience audience) async {
     final nameController = TextEditingController(text: audience.name);
-    final buildingController = TextEditingController(text: audience.building ?? 'Корпус А');
-    final capacityController = TextEditingController(text: audience.capacity.toString());
+    final capacityController = TextEditingController(text: (audience.capacity ?? '').toString());
+    final notesController = TextEditingController(text: audience.notes ?? '');
 
-    final List<String> types = ['Лекция', 'Семинар', 'Лаборатория', 'Практика'];
-    final List<String> teachers = ['И. И. Иванов', 'П. П. Петров', 'С. С. Сидоров'];
-
-    String selectedType = audience.type;
-    String selectedTeacher = audience.boss;
-
-    if (selectedType.isNotEmpty && !types.contains(selectedType)) {
-      types.insert(0, selectedType);
-    }
-    if (selectedTeacher.isNotEmpty && !teachers.contains(selectedTeacher)) {
-      teachers.insert(0, selectedTeacher);
-    }
-
-    final List<String> allEquipment = ['Доска', 'Проектор', 'ПК', 'Маркеры'];
-    List<String> selectedEquipment = List.from(audience.equipment);
+    // types selection UI removed for now; will be added later if needed
 
     await showDialog(
       context: context,
@@ -129,38 +108,6 @@ class _AudiencesPageState extends State<AudiencesScreen> {
                     ),
                     const SizedBox(height: 12),
 
-                    TextFormField(
-                      controller: buildingController,
-                      decoration: InputDecoration(
-                        labelText: 'Корпус',
-                        filled: true,
-                        fillColor: Colors.grey.shade100,
-                        border: OutlineInputBorder(
-                            borderRadius: BorderRadius.circular(12),
-                            borderSide: BorderSide.none),
-                      ),
-                    ),
-                    const SizedBox(height: 12),
-
-                    DropdownButtonFormField<String>(
-                      initialValue: types.contains(selectedType) ? selectedType : null,
-                      decoration: InputDecoration(
-                        labelText: 'Тип аудитории',
-                        filled: true,
-                        fillColor: Colors.grey.shade100,
-                        border: OutlineInputBorder(
-                            borderRadius: BorderRadius.circular(12),
-                            borderSide: BorderSide.none),
-                      ),
-                      items: types
-                          .map((type) => DropdownMenuItem(
-                                value: type,
-                                child: Text(type),
-                              ))
-                          .toList(),
-                      onChanged: (value) =>
-                          setStateDialog(() => selectedType = value ?? selectedType),
-                    ),
                     const SizedBox(height: 12),
 
                     TextFormField(
@@ -177,48 +124,16 @@ class _AudiencesPageState extends State<AudiencesScreen> {
                     ),
                     const SizedBox(height: 12),
 
-                    DropdownButtonFormField<String>(
-                      initialValue: teachers.contains(selectedTeacher) ? selectedTeacher : null,
+                    TextFormField(
+                      controller: notesController,
                       decoration: InputDecoration(
-                        labelText: 'Преподаватель',
+                        labelText: 'Заметки',
                         filled: true,
                         fillColor: Colors.grey.shade100,
                         border: OutlineInputBorder(
                             borderRadius: BorderRadius.circular(12),
                             borderSide: BorderSide.none),
                       ),
-                      items: teachers
-                          .map((t) => DropdownMenuItem(
-                                value: t,
-                                child: Text(t),
-                              ))
-                          .toList(),
-                      onChanged: (value) =>
-                          setStateDialog(() => selectedTeacher = value ?? selectedTeacher),
-                    ),
-                    const SizedBox(height: 12),
-
-                    const Text('Оборудование:'),
-                    const SizedBox(height: 8),
-                    Wrap(
-                      spacing: 8,
-                      children: allEquipment.map((eq) {
-                        final selected = selectedEquipment.contains(eq);
-                        return FilterChip(
-                          label: Text(eq),
-                          selected: selected,
-                          selectedColor: Colors.blue.shade100,
-                          onSelected: (bool value) {
-                            setStateDialog(() {
-                              if (value) {
-                                selectedEquipment.add(eq);
-                              } else {
-                                selectedEquipment.remove(eq);
-                              }
-                            });
-                          },
-                        );
-                      }).toList(),
                     ),
                     const SizedBox(height: 20),
                     Row(
@@ -232,12 +147,16 @@ class _AudiencesPageState extends State<AudiencesScreen> {
                         ElevatedButton(
                           onPressed: () {
                             setState(() {
-                              audience.name = nameController.text;
-                              audience.building = buildingController.text;
-                              audience.type = selectedType;
-                              audience.capacity = int.tryParse(capacityController.text) ?? audience.capacity;
-                              audience.boss = selectedTeacher;
-                              audience.equipment = List.from(selectedEquipment);
+                              final updated = Audience(
+                                id: audience.id,
+                                name: nameController.text.trim(),
+                                capacity: int.tryParse(capacityController.text.trim()),
+                                audienceTypeId: audience.audienceTypeId,
+                                buildingId: audience.buildingId,
+                                responsibleTeacherId: audience.responsibleTeacherId,
+                                notes: notesController.text.trim().isEmpty ? null : notesController.text.trim(),
+                              );
+                              _repo.updateAudience(updated);
                             });
                             Navigator.pop(context);
                           },
@@ -256,7 +175,7 @@ class _AudiencesPageState extends State<AudiencesScreen> {
         );
       },
     );
-    await _repo.update(audience);
+    await _repo.updateAudience(audience);
     await _init();
   }
 

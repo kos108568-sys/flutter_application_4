@@ -2,20 +2,38 @@ import 'dart:async';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../features/audiences/data/audiences_repository.dart';
-import '../../features/audiences/data/audiences_remote_repository.dart';
 import '../../features/departments/data/department_repository.dart';
 import '../../features/audience_types/data/audience_type_repository.dart';
 import '../../features/lesson_types/data/lesson_type_repository.dart';
-import 'sync_logger.dart';
+import '../../features/lesson_rules/data/lesson_rules_repository.dart';
+import '../../features/equipments/data/equipment_repository.dart';
+import '../../features/buildings/data/building_repository.dart';
+import '../../features/time_slots/data/time_slot_repository.dart';
+import '../../features/teachers/data/teachers_repository.dart';
+import '../../features/disciplines/data/disciplines_repository.dart';
+import '../../features/groups/data/groups_repository.dart';
+import '../../features/audiences/data/audience_equipments_repository.dart';
+import '../../features/gst/data/group_subject_teachers_repository.dart';
+// import 'sync_logger.dart';
 
 class SyncService {
   final _localAudRepo = AudiencesRepository();
-  final _remoteAudRepo = AudiencesRemoteRepository();
   final _departmentRepo = DepartmentRepository();
   final _audienceTypeRepo = AudienceTypeRepository();
   final _lessonTypeRepo = LessonTypeRepository();
+  final _lessonRulesRepo = LessonRulesRepository();
+  final _equipmentRepo = EquipmentRepository();
+  final _buildingRepo = BuildingRepository();
+  final _timeSlotRepo = TimeSlotRepository();
+  final _teachersRepo = TeachersRepository();
+  final _disciplinesRepo = DisciplinesRepository();
+  final _groupsRepo = GroupsRepository();
+  final _audEquipRepo = AudienceEquipmentsRepository();
+  final _gstRepo = GroupSubjectTeachersRepository();
   final supabase = Supabase.instance.client;
 
+  // last pull tracking currently unused
+  // ignore: unused_field
   DateTime _lastPulled = DateTime.fromMillisecondsSinceEpoch(0);
 
   Future<void> init() async {
@@ -24,81 +42,19 @@ class SyncService {
     _lastPulled = DateTime.fromMillisecondsSinceEpoch(since);
   }
 
+  // ignore: unused_element
   Future<void> _saveLastPulled() async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setInt('lastPulledAt', DateTime.now().millisecondsSinceEpoch);
     _lastPulled = DateTime.now();
   }
 
-  Future<void> pushPendingAudiences() async {
-    SyncLogger.log('Starting push of pending audiences');
-    final pending = await _localAudRepo.getPendingMaps();
-    SyncLogger.log('Found ${pending.length} pending audience(s)');
-    
-    for (final row in pending) {
-      try {
-        final localId = row['id'] as int;
-        final remoteId = row['remote_id'] as String?;
-        final deleted = (row['deleted'] as int?) ?? 0;
-        final payload = {
-          'name': row['name'],
-          'type': row['type'],
-          'capacity': row['capacity'],
-          'boss': row['boss'],
-          'building': row['building'],
-          'equipment': row['equipment'],
-        };
-        
-        SyncLogger.log('Processing audience: ${row['name']} (local_id: $localId, remote_id: $remoteId)');
-        if (remoteId == null) {
-          if (deleted == 1) {
-            SyncLogger.log('Skipping deleted local record with no remote ID');
-            await _localAudRepo.markSyncedByLocalId(localId);
-            continue;
-          }
-          SyncLogger.log('Inserting new record to Supabase');
-          final rid = await _remoteAudRepo.insert(payload);
-          if (rid != null) {
-            SyncLogger.log('Successfully inserted to Supabase, got remote ID: $rid');
-            await _localAudRepo.setRemoteId(localId, rid);
-          } else {
-            SyncLogger.log('Failed to get remote ID after insert');
-          }
-        } else {
-          if (deleted == 1) {
-            SyncLogger.log('Deleting record from Supabase: $remoteId');
-            await supabase.from('audiences').delete().eq('id', remoteId);
-            await _localAudRepo.markSyncedByLocalId(localId);
-          } else {
-            SyncLogger.log('Updating record in Supabase: $remoteId');
-            await _remoteAudRepo.update(remoteId, payload);
-            await _localAudRepo.markSyncedByLocalId(localId);
-          }
-        }
-      } catch (e, st) {
-        SyncLogger.log('Error processing audience sync', error: e, stackTrace: st);
-        // keep record pending for retry
-      }
-    }
-  }
-
-  Future<void> pullAudiencesSince() async {
-    final rows = await _remoteAudRepo.fetchSince(_lastPulled);
-    for (final r in rows) {
-      try {
-        await _localAudRepo.applyRemoteToLocal(r);
-      } catch (e) {
-        // log
-      }
-    }
-    await _saveLastPulled();
-  }
+  
 
   Future<void> fullSync() async {
     try {
-      // push local first, then pull remote
-      await pushPendingAudiences();
-      await pullAudiencesSince();
+      // синхронизация аудиторий
+      await _localAudRepo.syncAudiences();
       
       // Синхронизация отделов (асинхронно, чтобы не блокировать)
       Future.microtask(() async {
@@ -124,6 +80,87 @@ class SyncService {
           await _lessonTypeRepo.syncLessonTypes();
         } catch (e) {
           print('Ошибка при синхронизации типов занятий: $e');
+        }
+      });
+
+      // Синхронизация правил занятий и аудиторий (асинхронно, чтобы не блокировать)
+      Future.microtask(() async {
+        try {
+          await _lessonRulesRepo.syncRules();
+        } catch (e) {
+          print('Ошибка при синхронизации правил занятий: $e');
+        }
+      });
+
+      // Синхронизация справочника оборудования (асинхронно)
+      Future.microtask(() async {
+        try {
+          await _equipmentRepo.syncEquipments();
+        } catch (e) {
+          print('Ошибка при синхронизации оборудования: $e');
+        }
+      });
+
+      // Синхронизация справочника корпусов (асинхронно)
+      Future.microtask(() async {
+        try {
+          await _buildingRepo.syncBuildings();
+        } catch (e) {
+          print('Ошибка при синхронизации корпусов: $e');
+        }
+      });
+
+      // Синхронизация временных интервалов (асинхронно)
+      Future.microtask(() async {
+        try {
+          await _timeSlotRepo.syncTimeSlots();
+        } catch (e) {
+          print('Ошибка при синхронизации временных интервалов: $e');
+        }
+      });
+
+      // Синхронизация преподавателей (асинхронно)
+      Future.microtask(() async {
+        try {
+          await _teachersRepo.syncTeachers();
+        } catch (e) {
+          print('Ошибка при синхронизации преподавателей: $e');
+        }
+      });
+
+      // Синхронизация дисциплин (асинхронно)
+      Future.microtask(() async {
+        try {
+          await _disciplinesRepo.syncDisciplines();
+        } catch (e) {
+          print('Ошибка при синхронизации дисциплин: $e');
+        }
+      });
+
+      // Синхронизация групп (асинхронно)
+      Future.microtask(() async {
+        try {
+          await _groupsRepo.syncGroups();
+        } catch (e) {
+          print('Ошибка при синхронизации групп: $e');
+        }
+      });
+
+      // Синхронизация связей аудитория-оборудование (асинхронно)
+      Future.microtask(() async {
+        try {
+          await _audEquipRepo.syncAudienceEquipments();
+        } catch (e) {
+          print('Ошибка при синхронизации audience_equipments: $e');
+        }
+      });
+
+      // Синхронизация GST (асинхронно)
+      Future.microtask(() async {
+        try {
+          await _gstRepo.syncGST();
+        } catch (e) {
+          print('Ошибка при синхронизации group_subject_teachers: $e');
         }
       });
     } catch (e) {

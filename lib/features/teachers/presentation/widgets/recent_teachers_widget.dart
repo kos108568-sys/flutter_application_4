@@ -11,7 +11,7 @@ class RecentTeachersWidget extends StatefulWidget {
 
 class _RecentTeachersWidgetState extends State<RecentTeachersWidget> {
   final _repo = TeachersRepository();
-  List<TeacherModel> _items = [];
+  List<Teacher> _items = [];
 
   @override
   void initState() {
@@ -25,18 +25,18 @@ class _RecentTeachersWidgetState extends State<RecentTeachersWidget> {
   }
 
   Future<void> _load() async {
-    final items = await _repo.getRecent(limit: 5);
+    final items = await _repo.getAllTeachers(orderBy: 'id DESC');
     if (!mounted) return;
-    setState(() => _items = items);
+    setState(() => _items = items.take(5).toList());
   }
 
   Future<void> _openAddModal() async {
-    final result = await showDialog<TeacherModel>(
+    final result = await showDialog<Teacher>(
       context: context,
       builder: (ctx) => const _AddTeacherDialog(),
     );
     if (result != null) {
-      await _repo.insert(result);
+      await _repo.insertTeacherWithSync(result);
       await _load();
     }
   }
@@ -98,16 +98,27 @@ class _AddTeacherDialog extends StatefulWidget {
 class _AddTeacherDialogState extends State<_AddTeacherDialog> {
   final _formKey = GlobalKey<FormState>();
   final _fullName = TextEditingController();
+  final _email = TextEditingController();
+  final _phone = TextEditingController();
+  final _notes = TextEditingController();
 
   @override
   void dispose() {
     _fullName.dispose();
+    _email.dispose();
+    _phone.dispose();
+    _notes.dispose();
     super.dispose();
   }
 
   void _submit() {
     if (!_formKey.currentState!.validate()) return;
-    final model = TeacherModel(fullName: _fullName.text.trim(), curatorGroupId: null, disciplineIds: const [], audienceIds: const []);
+    final model = Teacher(
+      fullName: _fullName.text.trim(),
+      email: _email.text.trim().isEmpty ? null : _email.text.trim(),
+      phone: _phone.text.trim().isEmpty ? null : _phone.text.trim(),
+      notes: _notes.text.trim().isEmpty ? null : _notes.text.trim(),
+    );
     Navigator.of(context).pop(model);
   }
 
@@ -129,6 +140,18 @@ class _AddTeacherDialogState extends State<_AddTeacherDialog> {
                 controller: _fullName,
                 decoration: const InputDecoration(labelText: 'ФИО'),
                 validator: (v) => v == null || v.trim().isEmpty ? 'Укажите ФИО' : null,
+              ),
+              TextFormField(
+                controller: _email,
+                decoration: const InputDecoration(labelText: 'Email'),
+              ),
+              TextFormField(
+                controller: _phone,
+                decoration: const InputDecoration(labelText: 'Телефон'),
+              ),
+              TextFormField(
+                controller: _notes,
+                decoration: const InputDecoration(labelText: 'Заметки'),
               ),
               const SizedBox(height: 16),
               SizedBox(

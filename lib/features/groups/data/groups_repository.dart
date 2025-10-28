@@ -1,32 +1,37 @@
 import 'package:sqflite/sqflite.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../../core/db/db_helper.dart';
 import 'group_model.dart';
 
 class GroupsRepository {
   Future<Database> get _db async => DBHelper.instance.database;
+  final _supabase = Supabase.instance.client;
 
-  Future<int> insert(GroupModel g) async {
+  // Сохранение локально
+  Future<int> _insertLocal(GroupModel g) async {
     final db = await _db;
-    final id = await db.insert('groups', g.toMap()..remove('id'));
+    final id = await db.insert('groups', g.toMap());
     await _replaceDisciplines(db, id, g.disciplineIds);
     return id;
   }
 
-  Future<int> update(GroupModel g) async {
+  // Сохранение локально
+  Future<int> _updateLocal(GroupModel g) async {
     if (g.id == null) return 0;
     final db = await _db;
-    final res = await db.update('groups', g.toMap()..remove('id'), where: 'id = ?', whereArgs: [g.id]);
+    final res = await db.update('groups', g.toMap(), where: 'id = ?', whereArgs: [g.id]);
     await _replaceDisciplines(db, g.id!, g.disciplineIds);
     return res;
   }
 
-  Future<int> delete(int id) async {
+  // Сохранение локально
+  Future<int> _deleteLocal(int id) async {
     final db = await _db;
     await db.delete('group_disciplines', where: 'group_id = ?', whereArgs: [id]);
     return db.delete('groups', where: 'id = ?', whereArgs: [id]);
   }
 
-  Future<List<GroupModel>> getAll({String? search, String orderBy = 'name ASC'}) async {
+  Future<List<GroupModel>> getAllGroups({String? search, String orderBy = 'name ASC'}) async {
     final db = await _db;
     String where = '';
     List<Object?> args = [];
@@ -52,11 +57,105 @@ class GroupsRepository {
     final count = Sqflite.firstIntValue(await db.rawQuery('SELECT COUNT(*) FROM groups')) ?? 0;
     if (count > 0) return;
     final samples = [
-      GroupModel(name: 'PO-42', size: 30, curator: 'I. I. Ivanov', course: 2, specialty: 'Programmnaya inzheneriya', disciplineIds: const []),
-      GroupModel(name: 'PO-41', size: 28, curator: 'P. P. Petrov', course: 2, specialty: 'Programmnaya inzheneriya', disciplineIds: const []),
+      GroupModel(name: 'PO-42', size: 30, curator: 'I. I. Ivanov', course: 2, specialty: 'Programmnaya inzheneriya', disciplineIds: const [], studentCount: 30),
+      GroupModel(name: 'PO-41', size: 28, curator: 'P. P. Petrov', course: 2, specialty: 'Programmnaya inzheneriya', disciplineIds: const [], studentCount: 28),
     ];
     for (final g in samples) {
-      await insert(g);
+      await _insertLocal(g);
+    }
+  }
+
+  // Отправка в Supabase
+  Future<int?> _insertRemote(GroupModel g) async {
+    final res = await _supabase.from('groups').insert(g.toMap()).select('id').maybeSingle();
+    return res?['id'] as int?;
+  }
+
+  // Отправка в Supabase
+  Future<bool> _updateRemote(GroupModel g) async {
+    if (g.id == null) return false;
+    await _supabase.from('groups').update(g.toMap()).eq('id', g.id!);
+    return true;
+  }
+
+  // Отправка в Supabase
+  Future<bool> _deleteRemote(int id) async {
+    await _supabase.from('groups').delete().eq('id', id);
+    return true;
+  }
+
+  // Публичные методы
+  Future<int> insertGroup(GroupModel g) async {
+    // Сохранение локально
+    final localId = await _insertLocal(g);
+    // Отправка в Supabase
+    try {
+      final remoteId = await _insertRemote(g);
+      if (remoteId != null && remoteId != localId) {
+        final db = await _db;
+        await db.update('groups', {'id': remoteId}, where: 'id = ?', whereArgs: [localId]);
+        return remoteId;
+      }
+    } catch (_) {
+      // Работа офлайн
+    }
+    return localId;
+  }
+
+  Future<int> updateGroup(GroupModel g) async {
+    // Сохранение локально
+    final updated = await _updateLocal(g);
+    // Отправка в Supabase
+    try {
+      await _updateRemote(g);
+    } catch (_) {
+      // Работа офлайн
+    }
+    return updated;
+  }
+
+  Future<int> deleteGroup(int id) async {
+    // Сохранение локально
+    final deleted = await _deleteLocal(id);
+    // Отправка в Supabase
+    try {
+      await _deleteRemote(id);
+    } catch (_) {
+      // Работа офлайн
+    }
+    return deleted;
+  }
+
+  // Синхронизация при запуске
+  Future<void> syncGroups() async {
+    try {
+      final db = await _db;
+      final localRows = await db.query('groups');
+      final remoteRows = await _supabase.from('groups').select();
+
+      final localById = {for (final r in localRows) r['id'] as int: r};
+      final remoteList = (remoteRows as List).cast<Map<String, dynamic>>();
+      final remoteById = {for (final r in remoteList) r['id'] as int: r};
+
+      // Локальные, которых нет в Supabase → Отправка в Supabase
+      for (final entry in localById.entries) {
+        if (!remoteById.containsKey(entry.key)) {
+          try {
+            await _supabase.from('groups').insert(entry.value);
+          } catch (_) {}
+        }
+      }
+
+      // Удаленные, которых нет локально → Добавить локально
+      for (final entry in remoteById.entries) {
+        if (!localById.containsKey(entry.key)) {
+          try {
+            await db.insert('groups', entry.value);
+          } catch (_) {}
+        }
+      }
+    } catch (_) {
+      // Работа офлайн
     }
   }
 

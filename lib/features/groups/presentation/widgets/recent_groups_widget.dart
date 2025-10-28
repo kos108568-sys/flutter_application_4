@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
 
-import '../../../disciplines/data/discipline_model.dart';
+import '../../../disciplines/data/discipline_model.dart' as d;
 import '../../../disciplines/data/disciplines_repository.dart';
-import '../../../teachers/data/teacher_model.dart';
+import '../../../teachers/data/teacher_model.dart' as t;
 import '../../../teachers/data/teachers_repository.dart';
 import '../../data/group_model.dart';
 import '../../data/groups_repository.dart';
@@ -20,8 +20,8 @@ class _RecentGroupsWidgetState extends State<RecentGroupsWidget> {
   final _discRepo = DisciplinesRepository();
 
   List<GroupModel> _items = [];
-  List<TeacherModel> _teachers = [];
-  List<DisciplineModel> _disciplines = [];
+  List<t.Teacher> _teachers = [];
+  List<d.Discipline> _disciplines = [];
 
   @override
   void initState() {
@@ -32,8 +32,8 @@ class _RecentGroupsWidgetState extends State<RecentGroupsWidget> {
   Future<void> _load() async {
     await _groupsRepo.seedIfEmpty();
     final items = await _groupsRepo.getRecent(limit: 5);
-    final teachers = await _teachersRepo.getAll(orderBy: 'full_name ASC');
-    final discs = await _discRepo.getAll(orderBy: 'name ASC');
+    final teachers = await _teachersRepo.getAllTeachers(orderBy: 'full_name ASC');
+    final discs = await _discRepo.getAllDisciplines(orderBy: 'name ASC');
     if (!mounted) return;
     setState(() {
       _items = items;
@@ -51,7 +51,7 @@ class _RecentGroupsWidgetState extends State<RecentGroupsWidget> {
       ),
     );
     if (result != null) {
-      await _groupsRepo.insert(result);
+      await _groupsRepo.insertGroup(result);
       await _load();
     }
   }
@@ -122,8 +122,8 @@ class _RecentGroupsWidgetState extends State<RecentGroupsWidget> {
 }
 
 class _AddGroupDialog extends StatefulWidget {
-  final List<TeacherModel> teachers;
-  final List<DisciplineModel> disciplines;
+  final List<t.Teacher> teachers;
+  final List<d.Discipline> disciplines;
 
   const _AddGroupDialog({
     required this.teachers,
@@ -143,8 +143,8 @@ class _AddGroupDialogState extends State<_AddGroupDialog> {
   int? _selectedCuratorId;
   final Set<int> _selectedDisciplineIds = {};
 
-  List<TeacherModel> get _teachersWithId => widget.teachers.where((t) => t.id != null).toList();
-  List<DisciplineModel> get _disciplinesWithId => widget.disciplines.where((d) => d.id != null).toList();
+  List<t.Teacher> get _teachersWithId => widget.teachers.where((tch) => tch.id != null).toList();
+  List<d.Discipline> get _disciplinesWithId => widget.disciplines.where((disc) => disc.id != null).toList();
 
   @override
   void dispose() {
@@ -271,7 +271,7 @@ class _AddGroupDialogState extends State<_AddGroupDialog> {
 }
 
 class _SelectSubjectsDialog extends StatefulWidget {
-  final List<DisciplineModel> disciplines;
+  final List<d.Discipline> disciplines;
   final Set<int> initiallySelected;
   const _SelectSubjectsDialog({required this.disciplines, required this.initiallySelected});
 

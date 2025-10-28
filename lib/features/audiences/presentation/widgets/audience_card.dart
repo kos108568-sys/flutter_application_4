@@ -1,26 +1,13 @@
 import 'package:flutter/material.dart';
-import '../../data/audiences_item_model.dart';
+import '../../data/audience_model.dart';
 
 class AudienceCard extends StatelessWidget {
-  final AudiencesItemModel audience;
+  final Audience audience;
   final VoidCallback? onTap; // новый параметр
 
   const AudienceCard({super.key, required this.audience, this.onTap});
 
-  Color _getTypeColor(String type) {
-    switch (type.toLowerCase()) {
-      case 'компьютерная':
-        return Colors.blueAccent;
-      case 'лекционная':
-        return Colors.orangeAccent;
-      case 'лабораторная':
-        return Colors.green;
-      case 'семинарская':
-        return Colors.purpleAccent;
-      default:
-        return Colors.grey;
-    }
-  }
+  Color _getTypeColor() => Colors.grey;
 
   @override
   Widget build(BuildContext context) {
@@ -50,24 +37,25 @@ class AudienceCard extends StatelessWidget {
             const SizedBox(height: 8),
             Row(
               children: [
-                Container(
-                  width: 10,
-                  height: 10,
-                  decoration: BoxDecoration(
-                    color: _getTypeColor(audience.type),
-                    shape: BoxShape.circle,
+                if (audience.capacity != null) ...[
+                  Container(
+                    width: 10,
+                    height: 10,
+                    decoration: BoxDecoration(
+                      color: _getTypeColor(),
+                      shape: BoxShape.circle,
+                    ),
                   ),
-                ),
-                const SizedBox(width: 8),
-                Text(audience.type,
-                    style: TextStyle(color: Colors.grey.shade600, fontSize: 14)),
+                  const SizedBox(width: 8),
+                  Text('Вместимость: ${audience.capacity}',
+                      style: TextStyle(color: Colors.grey.shade600, fontSize: 14)),
+                ]
               ],
             ),
             const SizedBox(height: 12),
-            Text("Вместимость: ${audience.capacity}",
-                style: TextStyle(color: Colors.grey.shade700, fontSize: 14)),
-            Text("Ответственный: ${audience.boss}",
-                style: TextStyle(color: Colors.grey.shade700, fontSize: 14)),
+            if (audience.notes != null && audience.notes!.isNotEmpty)
+              Text(audience.notes!,
+                  style: TextStyle(color: Colors.grey.shade700, fontSize: 14)),
           ],
         ),
       ),
