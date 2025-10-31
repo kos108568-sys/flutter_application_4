@@ -7,6 +7,18 @@ class GroupsRepository {
   Future<Database> get _db async => DBHelper.instance.database;
   final _supabase = Supabase.instance.client;
 
+  Map<String, dynamic> _toRemoteMap(GroupModel g) {
+    return {
+      if (g.id != null) 'id': g.id,
+      'name': g.name,
+      'curator_teacher_id': g.curatorTeacherId,
+      'student_count': g.studentCount,
+      'course': g.course,
+      'department_id': g.departmentId,
+      'notes': g.notes,
+    };
+  }
+
   // Сохранение локально
   Future<int> _insertLocal(GroupModel g) async {
     final db = await _db;
@@ -67,14 +79,14 @@ class GroupsRepository {
 
   // Отправка в Supabase
   Future<int?> _insertRemote(GroupModel g) async {
-    final res = await _supabase.from('groups').insert(g.toMap()).select('id').maybeSingle();
+    final res = await _supabase.from('groups').insert(_toRemoteMap(g)).select('id').maybeSingle();
     return res?['id'] as int?;
   }
 
   // Отправка в Supabase
   Future<bool> _updateRemote(GroupModel g) async {
     if (g.id == null) return false;
-    await _supabase.from('groups').update(g.toMap()).eq('id', g.id!);
+    await _supabase.from('groups').update(_toRemoteMap(g)).eq('id', g.id!);
     return true;
   }
 
@@ -141,7 +153,9 @@ class GroupsRepository {
       for (final entry in localById.entries) {
         if (!remoteById.containsKey(entry.key)) {
           try {
-            await _supabase.from('groups').insert(entry.value);
+            final localMap = entry.value as Map<String, Object?>;
+            final localModel = GroupModel.fromMap(localMap);
+            await _supabase.from('groups').insert(_toRemoteMap(localModel));
           } catch (_) {}
         }
       }
@@ -150,7 +164,21 @@ class GroupsRepository {
       for (final entry in remoteById.entries) {
         if (!localById.containsKey(entry.key)) {
           try {
-            await db.insert('groups', entry.value);
+            final remote = entry.value as Map<String, Object?>;
+            final mapped = GroupModel.fromMap({
+              'id': remote['id'],
+              'name': remote['name'] ?? '',
+              'size': null,
+              'discipline_ids': '[]',
+              'curator': null,
+              'course': remote['course'],
+              'specialty': null,
+              'curator_teacher_id': remote['curator_teacher_id'],
+              'student_count': remote['student_count'],
+              'department_id': remote['department_id'],
+              'notes': remote['notes'],
+            });
+            await db.insert('groups', mapped.toMap(), conflictAlgorithm: ConflictAlgorithm.ignore);
           } catch (_) {}
         }
       }

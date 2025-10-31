@@ -156,93 +156,6 @@ class _DisciplinesPageState extends State<DisciplinesPage> {
     await _init();
   }
 
-  Future<void> _addDiscipline() async {
-    final name = TextEditingController();
-    final semester = TextEditingController();
-    int? lessonTypeId;
-    final selectedTeacherIds = <int>{};
-
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => Dialog(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-        child: Padding(
-          padding: const EdgeInsets.all(16),
-          child: SingleChildScrollView(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                const Text('Sozdanie distsipliny', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
-                const SizedBox(height: 12),
-                TextField(controller: name, decoration: const InputDecoration(labelText: 'Nazvanie')),
-                const SizedBox(height: 8),
-                DropdownButtonFormField<int?>(
-                  value: lessonTypeId,
-                  isExpanded: true,
-                  decoration: const InputDecoration(labelText: 'Tip zanyatiya'),
-                  items: [
-                    const DropdownMenuItem<int?>(value: null, child: Text('Ne vybran')),
-                    ..._lessonTypes.where((lt) => lt.id != null).map((lt) => DropdownMenuItem<int?>(value: lt.id, child: Text(lt.name))),
-                  ],
-                  onChanged: (v) => lessonTypeId = v,
-                ),
-                const SizedBox(height: 8),
-                TextField(controller: semester, decoration: const InputDecoration(labelText: 'Semestr'), keyboardType: TextInputType.text),
-                const SizedBox(height: 12),
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    const Text('Prepodavateli', style: TextStyle(fontWeight: FontWeight.w600)),
-                    TextButton.icon(
-                      onPressed: () async {
-                        final set = await showDialog<Set<int>>(
-                          context: ctx,
-                          builder: (c) => _SelectItemsDialog(
-                            title: 'Vybrat\' prepodavatelei',
-                            hint: 'Poisk...',
-                            items: [for (final t in _teachers) if (t.id != null) _SelectableItem(t.id!, t.fullName)],
-                            initiallySelected: selectedTeacherIds,
-                          ),
-                        );
-                        if (set != null) {
-                          selectedTeacherIds
-                            ..clear()
-                            ..addAll(set);
-                        }
-                      },
-                      icon: const Icon(Icons.edit),
-                      label: const Text('Naznachit\''),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 16),
-                SizedBox(
-                  width: double.infinity,
-                  child: ElevatedButton(
-                    onPressed: () => Navigator.pop(ctx, true),
-                    child: const Text('Sohranit\''),
-                  ),
-                )
-              ],
-            ),
-          ),
-        ),
-      ),
-    );
-
-    if (confirmed == true) {
-      final toCreate = Discipline(
-        name: name.text.trim(),
-        lessonTypeId: lessonTypeId,
-        semester: semester.text.trim().isEmpty ? null : semester.text.trim(),
-      );
-      final newId = await _repo.insertDiscipline(toCreate);
-      await _repo.setDisciplineTeachers(newId, selectedTeacherIds.toList());
-      await _init();
-    }
-  }
-
   Future<void> _refreshGroupNamesForFiltered() async {
     // Упрощено: связи групп убраны в текущей версии UI
     if (!mounted) return;
@@ -266,23 +179,11 @@ class _DisciplinesPageState extends State<DisciplinesPage> {
                 children: [
                   const Text('Spisok distsiplin', style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold)),
                   const SizedBox(height: 16),
-                  Row(
-                    children: [
-                      Expanded(
-                        child: DisciplineFilterBar(
-                          onFilterChanged: _onFilterChanged,
-                          onSortChanged: _onSortChanged,
-                          onViewChanged: _onViewChanged,
-                          isGridView: isGrid,
-                        ),
-                      ),
-                      const SizedBox(width: 12),
-                      ElevatedButton.icon(
-                        onPressed: _addDiscipline,
-                        icon: const Icon(Icons.add),
-                        label: const Text('Dobavit\''),
-                      ),
-                    ],
+                  DisciplineFilterBar(
+                    onFilterChanged: _onFilterChanged,
+                    onSortChanged: _onSortChanged,
+                    onViewChanged: _onViewChanged,
+                    isGridView: isGrid,
                   ),
                   const SizedBox(height: 16),
                   Expanded(
@@ -446,3 +347,4 @@ class _SelectItemsDialogState extends State<_SelectItemsDialog> {
     );
   }
 }
+

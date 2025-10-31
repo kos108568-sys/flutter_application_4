@@ -119,7 +119,12 @@ class DisciplinesRepository {
       for (final entry in localById.entries) {
         if (!remoteById.containsKey(entry.key)) {
           try {
-            await _supabase.from('disciplines').insert(entry.value);
+            await _supabase.from('disciplines').insert({
+              'id': entry.value['id'],
+              'name': entry.value['name'],
+              'lesson_type_id': entry.value['lesson_type_id'],
+              'semester': entry.value['semester'],
+            });
           } catch (_) {}
         }
       }
@@ -128,7 +133,14 @@ class DisciplinesRepository {
       for (final entry in remoteById.entries) {
         if (!localById.containsKey(entry.key)) {
           try {
-            await db.insert('disciplines', entry.value);
+            final remote = entry.value;
+            final mapped = Discipline.fromMap({
+              'id': remote['id'],
+              'name': remote['name'] ?? '',
+              'lesson_type_id': remote['lesson_type_id'],
+              'semester': remote['semester'],
+            });
+            await db.insert('disciplines', mapped.toMap(), conflictAlgorithm: ConflictAlgorithm.ignore);
           } catch (_) {}
         }
       }

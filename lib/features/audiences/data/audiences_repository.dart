@@ -48,7 +48,8 @@ class AudiencesRepository {
 
   // Отправка данных в Supabase
   Future<int?> _insertRemote(Audience a) async {
-    final res = await _supabase.from('audiences').insert(a.toMap()).select('id').maybeSingle();
+    final payload = Map<String, dynamic>.from(a.toMap())..remove('id');
+    final res = await _supabase.from('audiences').insert(payload).select('id').maybeSingle();
     return res?['id'] as int?;
   }
 
@@ -122,7 +123,16 @@ class AudiencesRepository {
       for (final entry in localById.entries) {
         if (!remoteById.containsKey(entry.key)) {
           try {
-            await _supabase.from('audiences').insert(entry.value);
+            final local = entry.value as Map<String, Object?>;
+            final payload = {
+              'name': local['name'],
+              'capacity': local['capacity'],
+              'audience_type_id': local['audience_type_id'],
+              'building_id': local['building_id'],
+              'responsible_teacher_id': local['responsible_teacher_id'],
+              'notes': local['notes'],
+            };
+            await _supabase.from('audiences').insert(payload);
           } catch (_) {}
         }
       }
@@ -131,7 +141,17 @@ class AudiencesRepository {
       for (final entry in remoteById.entries) {
         if (!localById.containsKey(entry.key)) {
           try {
-            await db.insert('audiences', entry.value);
+            final r = entry.value as Map<String, Object?>;
+            final mapped = Audience.fromMap({
+              'id': r['id'],
+              'name': r['name'] ?? '',
+              'capacity': r['capacity'],
+              'audience_type_id': r['audience_type_id'],
+              'building_id': r['building_id'],
+              'responsible_teacher_id': r['responsible_teacher_id'],
+              'notes': r['notes'],
+            });
+            await db.insert('audiences', mapped.toMap(), conflictAlgorithm: ConflictAlgorithm.ignore);
           } catch (_) {}
         }
       }
@@ -140,17 +160,7 @@ class AudiencesRepository {
     }
   }
 
-  Future<void> seedIfEmpty() async {
-    final db = await _db;
-    final count = Sqflite.firstIntValue(await db.rawQuery('SELECT COUNT(*) FROM audiences')) ?? 0;
-    if (count > 0) return;
-    final samples = [
-      Audience(name: 'А-302', capacity: 40, audienceTypeId: null, buildingId: null, responsibleTeacherId: null, notes: 'Лекционная'),
-      Audience(name: 'Д-431', capacity: 35, audienceTypeId: null, buildingId: null, responsibleTeacherId: null, notes: 'Семинар'),
-      Audience(name: 'К-108', capacity: 28, audienceTypeId: null, buildingId: null, responsibleTeacherId: null, notes: 'Лаборатория'),
-    ];
-    for (final s in samples) {
-      await _insertLocal(s);
-    }
+  Future<void> seedIfEmpty() async {    // No-op: do not preseed; let UI show empty state.\n  }
   }
 }
+

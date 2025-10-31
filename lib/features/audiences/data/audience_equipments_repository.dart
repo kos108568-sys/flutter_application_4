@@ -42,7 +42,8 @@ class AudienceEquipmentsRepository {
 
   // Отправка данных в Supabase
   Future<int?> _insertRemote(AudienceEquipment e) async {
-    final res = await _supabase.from(_table).insert(e.toMap()).select('id').maybeSingle();
+    final payload = Map<String, dynamic>.from(e.toMap())..remove('id');
+    final res = await _supabase.from(_table).insert(payload).select('id').maybeSingle();
     return res?['id'] as int?;
   }
 
@@ -97,7 +98,8 @@ class AudienceEquipmentsRepository {
       for (final entry in localById.entries) {
         if (!remoteById.containsKey(entry.key)) {
           try {
-            await _supabase.from(_table).insert(entry.value);
+            final payload = Map<String, dynamic>.from(entry.value)..remove('id');
+            await _supabase.from(_table).insert(payload);
           } catch (_) {}
         }
       }

@@ -41,6 +41,9 @@ class _GroupsPageState extends State<GroupsPage> {
   }
 
   Future<void> _load() async {
+    // Ensure teachers/disciplines are synced so IDs align with remote (FK safety)
+    try { await _teachersRepo.syncTeachers(); } catch (_) {}
+    try { await _discRepo.syncDisciplines(); } catch (_) {}
     final discs = await _discRepo.getAllDisciplines(orderBy: 'name ASC');
     final teachers = await _teachersRepo.getAllTeachers(orderBy: 'full_name ASC');
     if (!mounted) return;
@@ -62,17 +65,21 @@ class _GroupsPageState extends State<GroupsPage> {
       studentCount: int.tryParse(_sizeCtrl.text.trim()),
     );
     final groupId = await _groupsRepo.insertGroup(model);
-    for (final a in _assignments) {
-      await _gstRepo.insertGST(GroupSubjectTeacher(
-        groupId: groupId,
-        teacherId: a.teacherId,
-        disciplineId: a.disciplineId,
-        totalHours: a.totalHours,
-        startDate: a.startDate,
-        endDate: a.endDate,
-        notes: a.notes,
-      ));
-    }
+    // Insert GST rows after group exists remotely; make best-effort and continue
+    // Batch insert assignments for this group
+    final batchItems = _assignments
+        .map((a) => GroupSubjectTeacher(
+              groupId: groupId,
+              teacherId: a.teacherId,
+              disciplineId: a.disciplineId,
+              totalHours: a.totalHours,
+              startDate: a.startDate,
+              endDate: a.endDate,
+              notes: a.notes,
+            ))
+        .toList();
+    await _gstRepo.insertManyForGroup(groupId, batchItems);
+    try { await _gstRepo.syncGST(); } catch (_) {}
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Группа сохранена')));
     _nameCtrl.clear();

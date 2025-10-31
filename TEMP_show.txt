@@ -7,11 +7,11 @@ Future<void> initializeApp() async {
     print('Инициализация приложения...');
     
     // Initialize Supabase if configured
-    if (SUPABASE_URL.isNotEmpty && SUPABASE_ANON_KEY.isNotEmpty) {
+    if (SUPABASE_URL.isNotEmpty && SUPABASE_ANNON_KEY.isNotEmpty) {
       print('Инициализация Supabase...');
       await Supabase.initialize(
         url: SUPABASE_URL,
-        anonKey: SUPABASE_ANON_KEY,
+        anonKey: SUPABASE_ANNON_KEY,
       );
       print('Supabase инициализирован успешно');
 

@@ -1,4 +1,4 @@
-﻿import 'package:flutter/material.dart';
+import 'package:flutter/material.dart';
 import '../../../../core/constants/app_text_styles.dart';
 import '../../../../core/widgets/sidebar_menu.dart';
 import '../../../../core/widgets/schedule_card.dart';
@@ -11,9 +11,9 @@ class SchedulesPage extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final schedules = [
-      ScheduleModel(groupName: 'ПО-42', imageUrl: ''),
-      ScheduleModel(groupName: 'ПО-41', imageUrl: ''),
-      ScheduleModel(groupName: 'П-11', imageUrl: ''),
+      ScheduleModel(groupName: 'ИТ-42', imageUrl: ''),
+      ScheduleModel(groupName: 'ИТ-41', imageUrl: ''),
+      ScheduleModel(groupName: 'Э-11', imageUrl: ''),
       ScheduleModel(groupName: 'ИТ-123', imageUrl: ''),
     ];
 
@@ -21,7 +21,7 @@ class SchedulesPage extends StatelessWidget {
       backgroundColor: AppColors.background,
       body: Row(
         children: [
-          const SidebarMenu(selected: 'Расписание'),
+          const SidebarMenu(selected: 'Расписания'),
           Expanded(
             child: Padding(
               padding: const EdgeInsets.all(24.0),
@@ -29,7 +29,7 @@ class SchedulesPage extends StatelessWidget {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    const Text('Расписание', style: AppTextStyles.sectionTitle),
+                    const Text('Расписания', style: AppTextStyles.sectionTitle),
                     const SizedBox(height: 16),
                     _buildGrid(schedules),
                     const SizedBox(height: 24),
@@ -37,7 +37,7 @@ class SchedulesPage extends StatelessWidget {
                     const SizedBox(height: 16),
                     _buildGrid(schedules),
                     const SizedBox(height: 24),
-                    // Кнопки для тестирования и навигации к справочникам
+                    // Навигация для тестовых разделов и справочников
                     Wrap(
                       spacing: 8,
                       runSpacing: 8,
@@ -47,7 +47,7 @@ class SchedulesPage extends StatelessWidget {
                             Navigator.pushNamed(context, '/test-departments');
                           },
                           icon: const Icon(Icons.business),
-                          label: const Text('Тест отделов'),
+                          label: const Text('Кафедры'),
                           style: ElevatedButton.styleFrom(
                             backgroundColor: Colors.blue,
                             foregroundColor: Colors.white,
@@ -59,7 +59,7 @@ class SchedulesPage extends StatelessWidget {
                             Navigator.pushNamed(context, '/test-audience-types');
                           },
                           icon: const Icon(Icons.meeting_room),
-                          label: const Text('Тест типов аудиторий'),
+                          label: const Text('Типы аудиторий'),
                           style: ElevatedButton.styleFrom(
                             backgroundColor: Colors.purple,
                             foregroundColor: Colors.white,
@@ -71,7 +71,7 @@ class SchedulesPage extends StatelessWidget {
                             Navigator.pushNamed(context, '/test-lesson-types');
                           },
                           icon: const Icon(Icons.school),
-                          label: const Text('Тест типов занятий'),
+                          label: const Text('Типы занятий'),
                           style: ElevatedButton.styleFrom(
                             backgroundColor: Colors.green,
                             foregroundColor: Colors.white,
@@ -95,7 +95,7 @@ class SchedulesPage extends StatelessWidget {
                             Navigator.pushNamed(context, '/buildings');
                           },
                           icon: const Icon(Icons.location_city),
-                          label: const Text('Корпусы'),
+                          label: const Text('Корпуса'),
                           style: ElevatedButton.styleFrom(
                             backgroundColor: Colors.indigo,
                             foregroundColor: Colors.white,
@@ -107,7 +107,7 @@ class SchedulesPage extends StatelessWidget {
                             Navigator.pushNamed(context, '/time-slots');
                           },
                           icon: const Icon(Icons.access_time),
-                          label: const Text('Слоты времени'),
+                          label: const Text('Временные слоты'),
                           style: ElevatedButton.styleFrom(
                             backgroundColor: Colors.deepOrange,
                             foregroundColor: Colors.white,
@@ -134,3 +134,4 @@ class SchedulesPage extends StatelessWidget {
     );
   }
 }
+

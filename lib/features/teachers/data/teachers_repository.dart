@@ -48,10 +48,8 @@ class TeachersRepository {
   }
 
   Future<void> seedIfEmpty() async {
-    final db = await _db;
-    final count = Sqflite.firstIntValue(await db.rawQuery('SELECT COUNT(*) FROM teachers')) ?? 0;
-    if (count > 0) return;
-    await db.insert('teachers', {'full_name': 'Primer Prepodavatel'});
+    // Intentionally do nothing to avoid auto-creating sample teachers.
+    // Empty state will be shown in UI when no teachers exist.
   }
 
   // Отправка данных в Supabase
@@ -138,7 +136,9 @@ class TeachersRepository {
       for (final entry in localById.entries) {
         if (!remoteById.containsKey(entry.key)) {
           try {
-            final created = await sb.from('teachers').insert(entry.value).select('id').maybeSingle();
+            final map = Map<String, dynamic>.from(entry.value);
+            map.remove('id');
+            final created = await sb.from('teachers').insert(map).select('id').maybeSingle();
             final newId = created?['id'] as int?;
             if (newId != null && newId != entry.key) {
               await db.update('teachers', {'id': newId}, where: 'id = ?', whereArgs: [entry.key]);
@@ -151,7 +151,16 @@ class TeachersRepository {
       for (final entry in remoteById.entries) {
         if (!localById.containsKey(entry.key)) {
           try {
-            await db.insert('teachers', entry.value, conflictAlgorithm: ConflictAlgorithm.ignore);
+            final remote = entry.value;
+            final mapped = Teacher.fromMap({
+              'id': remote['id'],
+              'full_name': remote['full_name'] ?? '',
+              'department_id': remote['department_id'],
+              'email': remote['email'],
+              'phone': remote['phone'],
+              'notes': remote['notes'],
+            });
+            await db.insert('teachers', mapped.toMap(), conflictAlgorithm: ConflictAlgorithm.ignore);
           } catch (_) {}
         }
       }

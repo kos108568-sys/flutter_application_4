@@ -40,6 +40,7 @@ class _GroupsScreenState extends State<GroupsScreen> {
 
   Future<void> _init() async {
     await _repo.seedIfEmpty();
+    try { await _repo.syncGroups(); } catch (_) {}
     final items = await _repo.getAllGroups(orderBy: 'name ASC');
     final teachers = await _teachersRepo.getAllTeachers(orderBy: 'full_name ASC');
     final discs = await _discRepo.getAllDisciplines(orderBy: 'name ASC');
@@ -444,3 +445,4 @@ class _SelectItemsDialogState extends State<_SelectItemsDialog> {
     );
   }
 }
+

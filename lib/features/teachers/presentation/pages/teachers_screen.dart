@@ -36,6 +36,8 @@ class _TeachersScreenState extends State<TeachersScreen> {
 
   Future<void> _init() async {
     await _repo.seedIfEmpty();
+    // Try to pull teachers from Supabase if available
+    try { await _repo.syncTeachers(); } catch (_) {}
     try {
       _departments = await _deptRepo.getAllDepartments(orderBy: 'name ASC');
     } catch (_) {}
@@ -70,7 +72,11 @@ class _TeachersScreenState extends State<TeachersScreen> {
   Future<void> _openAddTeacher() async {
     final res = await showDialog<_TeacherResult>(
       context: context,
-      builder: (ctx) => _TeacherDialog(departments: _departments, disciplines: _disciplines),
+      builder: (ctx) => _TeacherDialog(
+        departments: _departments,
+        disciplines: _disciplines,
+        initialSelectedDisciplineIds: const {},
+      ),
     );
     if (res != null) {
       final newId = await _repo.insertTeacherWithSync(res.teacher);
@@ -80,9 +86,16 @@ class _TeachersScreenState extends State<TeachersScreen> {
   }
 
   Future<void> _openEditTeacher(Teacher t) async {
+    // Preload selected disciplines for this teacher
+    final existingIds = t.id != null ? await _repo.getTeacherDisciplineIds(t.id!) : <int>[];
     final res = await showDialog<_TeacherResult>(
       context: context,
-      builder: (ctx) => _TeacherDialog(existing: t, departments: _departments, disciplines: _disciplines),
+      builder: (ctx) => _TeacherDialog(
+        existing: t,
+        departments: _departments,
+        disciplines: _disciplines,
+        initialSelectedDisciplineIds: existingIds.toSet(),
+      ),
     );
     if (res != null) {
       await _repo.updateTeacherWithSync(res.teacher);
@@ -145,43 +158,50 @@ class _TeachersScreenState extends State<TeachersScreen> {
                   ),
                   const SizedBox(height: 16),
                   Expanded(
-                    child: isGrid
-                        ? GridView.builder(
-                            padding: EdgeInsets.zero,
-                            gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                              crossAxisCount: 2,
-                              mainAxisSpacing: 16,
-                              crossAxisSpacing: 16,
-                              childAspectRatio: 2.5,
+                    child: filtered.isEmpty
+                        ? const Center(
+                            child: Text(
+                              'Преподаватели пока не добавлены',
+                              style: TextStyle(color: Colors.grey, fontSize: 14),
                             ),
-                            itemCount: filtered.length,
-                            itemBuilder: (context, i) {
-                              final item = filtered[i];
-                              return GestureDetector(
-                                onTap: () => setState(() => _selected = item),
-                                child: TeacherCard(
-                                  teacher: item,
-                                  curatorGroupName: null,
-                                  onTap: () => setState(() => _selected = item),
-                                ),
-                              );
-                            },
                           )
-                        : ListView.separated(
-                            itemCount: filtered.length,
-                            separatorBuilder: (_, __) => const SizedBox(height: 12),
-                            itemBuilder: (context, i) {
-                              final item = filtered[i];
-                              return GestureDetector(
-                                onTap: () => setState(() => _selected = item),
-                                child: TeacherCard(
-                                  teacher: item,
-                                  curatorGroupName: null,
-                                  onTap: () => setState(() => _selected = item),
+                        : isGrid
+                            ? GridView.builder(
+                                padding: EdgeInsets.zero,
+                                gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                                  crossAxisCount: 2,
+                                  mainAxisSpacing: 16,
+                                  crossAxisSpacing: 16,
+                                  childAspectRatio: 2.5,
                                 ),
-                              );
-                            },
-                          ),
+                                itemCount: filtered.length,
+                                itemBuilder: (context, i) {
+                                  final item = filtered[i];
+                                  return GestureDetector(
+                                    onTap: () => setState(() => _selected = item),
+                                    child: TeacherCard(
+                                      teacher: item,
+                                      curatorGroupName: null,
+                                      onTap: () => setState(() => _selected = item),
+                                    ),
+                                  );
+                                },
+                              )
+                            : ListView.separated(
+                                itemCount: filtered.length,
+                                separatorBuilder: (_, __) => const SizedBox(height: 12),
+                                itemBuilder: (context, i) {
+                                  final item = filtered[i];
+                                  return GestureDetector(
+                                    onTap: () => setState(() => _selected = item),
+                                    child: TeacherCard(
+                                      teacher: item,
+                                      curatorGroupName: null,
+                                      onTap: () => setState(() => _selected = item),
+                                    ),
+                                  );
+                                },
+                              ),
                   )
                 ],
               ),
@@ -219,7 +239,8 @@ class _TeacherDialog extends StatefulWidget {
   final Teacher? existing;
   final List<Department> departments;
   final List<Discipline> disciplines;
-  const _TeacherDialog({this.existing, required this.departments, required this.disciplines});
+  final Set<int> initialSelectedDisciplineIds;
+  const _TeacherDialog({this.existing, required this.departments, required this.disciplines, required this.initialSelectedDisciplineIds});
 
   @override
   State<_TeacherDialog> createState() => _TeacherDialogState();
@@ -244,6 +265,10 @@ class _TeacherDialogState extends State<_TeacherDialog> {
       _notes.text = e.notes ?? '';
       _departmentId = e.departmentId;
     }
+    // Seed initial discipline selection
+    _selectedDisciplineIds
+      ..clear()
+      ..addAll(widget.initialSelectedDisciplineIds);
   }
 
   @override

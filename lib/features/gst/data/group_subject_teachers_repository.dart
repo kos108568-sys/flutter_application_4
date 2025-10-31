@@ -63,8 +63,13 @@ class GroupSubjectTeachersRepository {
 
   // Отправка данных в Supabase
   Future<int?> _insertRemote(GroupSubjectTeacher m) async {
-    final res = await _supabase.from(_table).insert(m.toMap()).select('id').maybeSingle();
-    return res?['id'] as int?;
+    try {
+      final payload = Map<String, dynamic>.from(m.toMap())..remove('id');
+      final res = await _supabase.from(_table).insert(payload).select('id').maybeSingle();
+      return res?['id'] as int?;
+    } catch (e) {
+      return null;
+    }
   }
 
   // Отправка данных в Supabase
@@ -85,75 +90,83 @@ class GroupSubjectTeachersRepository {
     // Сохранение локально
     final localId = await _insertLocal(m);
     // Отправка данных в Supabase
-    try {
-      final remoteId = await _insertRemote(m);
-      if (remoteId != null && remoteId != localId) {
-        final db = await _db;
-        await db.update(_table, {'id': remoteId}, where: 'id = ?', whereArgs: [localId]);
-        return remoteId;
-      }
-    } catch (_) {
-      // Работа офлайн
+    final remoteId = await _insertRemote(m);
+    if (remoteId != null && remoteId != localId) {
+      final db = await _db;
+      await db.update(_table, {'id': remoteId}, where: 'id = ?', whereArgs: [localId]);
+      return remoteId;
     }
     return localId;
   }
 
-  Future<int> updateGST(GroupSubjectTeacher m) async {
-    // Сохранение локально
-    final updated = await _updateLocal(m);
-    // Отправка данных в Supabase
-    try {
-      await _updateRemote(m);
-    } catch (_) {
-      // Работа офлайн
+  // Batch insert GST rows for a group: insert local, then remote, then map remote IDs back
+  Future<void> insertManyForGroup(int groupId, List<GroupSubjectTeacher> items) async {
+    if (items.isEmpty) return;
+    final db = await _db;
+    final batch = db.batch();
+    for (final m in items) {
+      final row = m.toMap();
+      row.remove('id');
+      batch.insert(_table, row, conflictAlgorithm: ConflictAlgorithm.ignore);
     }
-    return updated;
-  }
+    await batch.commit(noResult: true);
 
-  Future<int> deleteGST(int id) async {
-    // Сохранение локально
-    final deleted = await _deleteLocal(id);
-    // Отправка данных в Supabase
     try {
-      await _deleteRemote(id);
+      final payload = items
+          .map((m) => (Map<String, dynamic>.from(m.toMap())..remove('id')))
+          .toList();
+      final inserted = await _supabase
+          .from(_table)
+          .insert(payload)
+          .select('id, group_id, teacher_id, discipline_id');
+      final list = (inserted as List).cast<Map<String, dynamic>>();
+      for (final r in list) {
+        final rid = r['id'] as int?;
+        if (rid == null) continue;
+        // Update local PK to remote id by natural key (group, teacher, discipline)
+        await db.update(
+          _table,
+          {'id': rid},
+          where: 'group_id = ? AND teacher_id = ? AND discipline_id = ?',
+          whereArgs: [r['group_id'], r['teacher_id'], r['discipline_id']],
+        );
+      }
     } catch (_) {
-      // Работа офлайн
+      // best-effort; syncGST will reconcile later
     }
-    return deleted;
   }
-
-  // Синхронизация при запуске
+  // Sync local <-> remote GST rows (best-effort)
   Future<void> syncGST() async {
     try {
       final db = await _db;
       final localRows = await db.query(_table);
       final remoteRows = await _supabase.from(_table).select();
 
-      final localById = {for (final r in localRows) r['id'] as int: r};
+      final localById = {for (final r in localRows) (r['id'] as int?): r};
       final remoteList = (remoteRows as List).cast<Map<String, dynamic>>();
-      final remoteById = {for (final r in remoteList) r['id'] as int: r};
+      final remoteById = {for (final r in remoteList) (r['id'] as int?): r};
 
-      // Локальные, которых нет в Supabase → Отправка данных в Supabase
+      // Push: local rows missing in remote
       for (final entry in localById.entries) {
-        if (!remoteById.containsKey(entry.key)) {
-          try {
-            await _supabase.from(_table).insert(entry.value);
-          } catch (_) {}
-        }
+        final id = entry.key;
+        if (id == null || remoteById.containsKey(id)) continue;
+        try {
+          final payload = Map<String, dynamic>.from(entry.value)..remove('id');
+          await _supabase.from(_table).insert(payload);
+        } catch (_) {}
       }
 
-      // Удаленные, которых нет локально → Добавить локально
+      // Pull: remote rows missing locally
       for (final entry in remoteById.entries) {
-        if (!localById.containsKey(entry.key)) {
-          try {
-            await db.insert(_table, entry.value, conflictAlgorithm: ConflictAlgorithm.ignore);
-          } catch (_) {}
-        }
+        final id = entry.key;
+        if (id == null || localById.containsKey(id)) continue;
+        try {
+          await db.insert(_table, entry.value, conflictAlgorithm: ConflictAlgorithm.ignore);
+        } catch (_) {}
       }
     } catch (_) {
-      // Работа офлайн
+      // ignore sync errors
     }
   }
 }
-
 

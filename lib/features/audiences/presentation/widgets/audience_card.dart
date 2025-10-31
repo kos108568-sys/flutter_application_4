@@ -1,18 +1,20 @@
-import 'package:flutter/material.dart';
+﻿import 'package:flutter/material.dart';
 import '../../data/audience_model.dart';
 
 class AudienceCard extends StatelessWidget {
   final Audience audience;
-  final VoidCallback? onTap; // новый параметр
+  final VoidCallback? onTap;
+  final VoidCallback? onEdit;
+  final VoidCallback? onDelete;
 
-  const AudienceCard({super.key, required this.audience, this.onTap});
+  const AudienceCard({super.key, required this.audience, this.onTap, this.onEdit, this.onDelete});
 
-  Color _getTypeColor() => Colors.grey;
+  Color _dotColor() => Colors.grey;
 
   @override
   Widget build(BuildContext context) {
     return GestureDetector(
-      onTap: onTap, // добавляем обработку нажатия
+      onTap: onTap,
       child: Container(
         padding: const EdgeInsets.all(16),
         decoration: BoxDecoration(
@@ -29,10 +31,28 @@ class AudienceCard extends StatelessWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text(
-              audience.name,
-              style: const TextStyle(
-                  fontSize: 20, fontWeight: FontWeight.bold, color: Colors.black),
+            Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    audience.name,
+                    style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: Colors.black),
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+                if (onEdit != null)
+                  IconButton(
+                    tooltip: 'Edit',
+                    icon: const Icon(Icons.edit, size: 18),
+                    onPressed: onEdit,
+                  ),
+                if (onDelete != null)
+                  IconButton(
+                    tooltip: 'Delete',
+                    icon: const Icon(Icons.delete_outline, size: 18),
+                    onPressed: onDelete,
+                  ),
+              ],
             ),
             const SizedBox(height: 8),
             Row(
@@ -41,21 +61,19 @@ class AudienceCard extends StatelessWidget {
                   Container(
                     width: 10,
                     height: 10,
-                    decoration: BoxDecoration(
-                      color: _getTypeColor(),
-                      shape: BoxShape.circle,
-                    ),
+                    decoration: BoxDecoration(color: _dotColor(), shape: BoxShape.circle),
                   ),
                   const SizedBox(width: 8),
-                  Text('Вместимость: ${audience.capacity}',
-                      style: TextStyle(color: Colors.grey.shade600, fontSize: 14)),
+                  Text('Capacity: ${audience.capacity}', style: TextStyle(color: Colors.grey.shade600, fontSize: 14)),
                 ]
               ],
             ),
             const SizedBox(height: 12),
             if (audience.notes != null && audience.notes!.isNotEmpty)
-              Text(audience.notes!,
-                  style: TextStyle(color: Colors.grey.shade700, fontSize: 14)),
+              Text(
+                audience.notes!,
+                style: TextStyle(color: Colors.grey.shade700, fontSize: 14),
+              ),
           ],
         ),
       ),
