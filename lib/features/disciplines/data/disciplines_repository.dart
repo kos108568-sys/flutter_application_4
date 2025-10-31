@@ -40,6 +40,9 @@ class DisciplinesRepository {
   // Сохранение локально
   Future<int> _deleteLocal(int id) async {
     final db = await _db;
+    // cleanup join tables first
+    await db.delete('teacher_disciplines', where: 'discipline_id = ?', whereArgs: [id]);
+    await db.delete('group_disciplines', where: 'discipline_id = ?', whereArgs: [id]);
     return await db.delete('disciplines', where: 'id = ?', whereArgs: [id]);
   }
 
@@ -154,9 +157,7 @@ class DisciplinesRepository {
     final count = Sqflite.firstIntValue(await db.rawQuery('SELECT COUNT(*) FROM disciplines')) ?? 0;
     if (count > 0) return;
     final samples = <Discipline>[
-      Discipline(name: 'Математика', lessonTypeId: null, semester: '1'),
-      Discipline(name: 'Информатика', lessonTypeId: null, semester: '1'),
-      Discipline(name: 'Физика', lessonTypeId: null, semester: '2'),
+    
     ];
     for (final s in samples) {
       await _insertLocal(s);

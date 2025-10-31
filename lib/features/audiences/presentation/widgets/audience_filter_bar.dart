@@ -3,12 +3,14 @@ import 'package:flutter/material.dart';
 typedef OnFilterChanged = void Function(String query);
 typedef OnSortChanged = void Function(String sortBy);
 typedef OnViewChanged = void Function(bool isGridView);
+typedef OnAddPressed = void Function();
 
 class AudienceFilterBar extends StatefulWidget {
   final OnFilterChanged onFilterChanged;
   final OnSortChanged onSortChanged;
   final OnViewChanged onViewChanged;
   final bool isGridView;
+  final OnAddPressed? onAddPressed;
 
   const AudienceFilterBar({
     super.key,
@@ -16,6 +18,7 @@ class AudienceFilterBar extends StatefulWidget {
     required this.onSortChanged,
     required this.onViewChanged,
     required this.isGridView,
+    this.onAddPressed,
   });
 
   @override
@@ -102,6 +105,19 @@ class _AudienceFilterBarState extends State<AudienceFilterBar> {
                 color: !widget.isGridView ? Colors.blue : Colors.grey),
             onPressed: () => widget.onViewChanged(false),
           ),
+
+          if (widget.onAddPressed != null) ...[
+            const SizedBox(width: 8),
+            ElevatedButton.icon(
+              onPressed: widget.onAddPressed,
+              style: ElevatedButton.styleFrom(
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+              ),
+              icon: const Icon(Icons.add_rounded),
+              label: const Text('Добавить'),
+            ),
+          ],
         ],
       ),
     );

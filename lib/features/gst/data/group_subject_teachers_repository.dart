@@ -168,5 +168,28 @@ class GroupSubjectTeachersRepository {
       // ignore sync errors
     }
   }
+
+  // Replace all assignments for a group (delete then insert). Best-effort sync to Supabase.
+  Future<void> replaceForGroup(int groupId, List<GroupSubjectTeacher> items) async {
+    final db = await _db;
+    await db.delete(_table, where: 'group_id = ?', whereArgs: [groupId]);
+    try {
+      await _supabase.from(_table).delete().eq('group_id', groupId);
+    } catch (_) {}
+    // ensure groupId set on each item
+    final normalized = items
+        .map((m) => GroupSubjectTeacher(
+              id: m.id,
+              groupId: groupId,
+              teacherId: m.teacherId,
+              disciplineId: m.disciplineId,
+              totalHours: m.totalHours,
+              startDate: m.startDate,
+              endDate: m.endDate,
+              notes: m.notes,
+            ))
+        .toList();
+    await insertManyForGroup(groupId, normalized);
+  }
 }
 

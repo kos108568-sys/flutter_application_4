@@ -1,4 +1,4 @@
-import 'package:flutter/material.dart';
+﻿import 'package:flutter/material.dart';
 
 import '../../../../core/widgets/sidebar_menu.dart';
 import '../../../disciplines/data/discipline_model.dart';
@@ -7,6 +7,8 @@ import '../../../teachers/data/teacher_model.dart';
 import '../../../teachers/data/teachers_repository.dart';
 import '../../data/group_model.dart';
 import '../../data/groups_repository.dart';
+import '../../../gst/data/group_subject_teacher_model.dart';
+import '../../../gst/data/group_subject_teachers_repository.dart';
 import '../widgets/group_card.dart';
 import '../widgets/group_filter_bar.dart';
 import '../widgets/recent_groups_widget.dart';
@@ -23,6 +25,7 @@ class _GroupsScreenState extends State<GroupsScreen> {
   final _repo = GroupsRepository();
   final _teachersRepo = TeachersRepository();
   final _discRepo = DisciplinesRepository();
+  final _gstRepo = GroupSubjectTeachersRepository();
 
   List<GroupModel> all = [];
   List<GroupModel> filtered = [];
@@ -106,6 +109,13 @@ class _GroupsScreenState extends State<GroupsScreen> {
     final specialty = TextEditingController(text: g.specialty ?? '');
     int? curatorId = g.curatorTeacherId ?? _teacherIdByName(g.curator);
     final selectedDisc = {...g.disciplineIds};
+    final assignments = <GroupSubjectTeacher>[];
+    if (g.id != null) {
+      try {
+        final current = await _gstRepo.getByGroup(g.id!);
+        assignments.addAll(current);
+      } catch (_) {}
+    }
 
     Future<bool> confirmDelete() async {
       final ok = await showDialog<bool>(
@@ -130,10 +140,11 @@ class _GroupsScreenState extends State<GroupsScreen> {
           padding: const EdgeInsets.all(16),
           child: StatefulBuilder(
             builder: (context, setStateDialog) {
-              return Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
+              return SingleChildScrollView(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
                   const Text('Edit group', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
                   const SizedBox(height: 12),
                   Row(children: [
@@ -142,35 +153,6 @@ class _GroupsScreenState extends State<GroupsScreen> {
                     Expanded(child: TextField(controller: specialty, decoration: const InputDecoration(labelText: 'Specialty'))),
                   ]),
                   const SizedBox(height: 12),
-                  const Text('Subjects'),
-                  const SizedBox(height: 8),
-                  Row(
-                    children: [
-                      ElevatedButton(
-                        onPressed: () async {
-                          final result = await showDialog<Set<int>>(
-                            context: context,
-                            builder: (c) => _SelectItemsDialog(
-                              title: 'Select subjects',
-                              hint: 'Search subjects...',
-                              items: [for (final d in _disciplines) if (d.id != null) _SelectableItem(d.id!, d.name)],
-                              initiallySelected: selectedDisc,
-                            ),
-                          );
-                          if (result != null) {
-                            setStateDialog(() {
-                              selectedDisc
-                                ..clear()
-                                ..addAll(result);
-                            });
-                          }
-                        },
-                        child: const Text('Select subjects'),
-                      ),
-                      const SizedBox(width: 12),
-                      Text('Selected: ' + selectedDisc.length.toString()),
-                    ],
-                  ),
                   const SizedBox(height: 12),
                   Row(children: [
                     Expanded(
@@ -207,6 +189,66 @@ class _GroupsScreenState extends State<GroupsScreen> {
                     const Expanded(child: SizedBox()),
                   ]),
                   const SizedBox(height: 16),
+                  // Assignments section
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      const Text('Assignments (teacher, subject, hours, dates)'),
+                      TextButton.icon(
+                        onPressed: () async {
+                          final newItem = await _showAddAssignmentDialogForEdit(g.id);
+                          if (newItem != null) {
+                            setStateDialog(() => assignments.add(newItem));
+                          }
+                        },
+                        icon: const Icon(Icons.add),
+                        label: const Text('Add'),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 8),
+                  ...assignments.asMap().entries.map((e) {
+                    final a = e.value;
+                    final idx = e.key;
+                    final discName = _disciplines.firstWhere(
+                      (d) => d.id == a.disciplineId,
+                      orElse: () => Discipline(name: 'Unknown'),
+                    ).name;
+                    final teacherName = _teachers.firstWhere(
+                      (t) => t.id == a.teacherId,
+                      orElse: () => Teacher(fullName: 'Unknown'),
+                    ).fullName;
+                    return Container(
+                      margin: const EdgeInsets.only(bottom: 8),
+                      padding: const EdgeInsets.all(8),
+                      decoration: BoxDecoration(
+                        color: Colors.grey.shade100,
+                        borderRadius: BorderRadius.circular(6),
+                        border: Border.all(color: Colors.grey.shade300),
+                      ),
+                      child: Row(
+                        children: [
+                          Expanded(child: Text('$discName - $teacherName, ${a.totalHours}h ${a.startDate ?? ''} ${a.endDate ?? ''}')),
+                          IconButton(
+                            tooltip: 'Edit',
+                            icon: const Icon(Icons.edit_outlined),
+                            onPressed: () async {
+                              final updated = await _showEditAssignmentDialogForEdit(g.id, a);
+                              if (updated != null) {
+                                setStateDialog(() => assignments[idx] = updated);
+                              }
+                            },
+                          ),
+                          IconButton(
+                            tooltip: 'Remove',
+                            icon: const Icon(Icons.delete_outline),
+                            onPressed: () => setStateDialog(() => assignments.remove(a)),
+                          ),
+                        ],
+                      ),
+                    );
+                  }).toList(),
+                  const SizedBox(height: 16),
                   Row(
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
@@ -228,7 +270,7 @@ class _GroupsScreenState extends State<GroupsScreen> {
                           g.studentCount = int.tryParse(size.text.trim());
                           g.course = int.tryParse(course.text.trim());
                           g.specialty = specialty.text.trim().isEmpty ? null : specialty.text.trim();
-                          g.disciplineIds = selectedDisc.toList();
+                          g.disciplineIds = assignments.map((a) => a.disciplineId).whereType<int>().toSet().toList();
                           Navigator.pop(ctx);
                         },
                         child: const Text('Save'),
@@ -236,6 +278,7 @@ class _GroupsScreenState extends State<GroupsScreen> {
                     ],
                   )
                 ],
+              ),
               );
             },
           ),
@@ -243,7 +286,268 @@ class _GroupsScreenState extends State<GroupsScreen> {
       ),
     );
     await _repo.updateGroup(g);
+    if (g.id != null) {
+      try {
+        await _gstRepo.replaceForGroup(g.id!, assignments);
+      } catch (_) {}
+    }
     await _init();
+  }
+
+  Future<GroupSubjectTeacher?> _showAddAssignmentDialogForEdit(int? groupId) async {
+    if (groupId == null) return null;
+    int? disciplineId;
+    int? teacherId;
+    final hoursCtrl = TextEditingController(text: '2');
+    DateTime? start;
+    DateTime? end;
+    List<Teacher> filteredTeachers = _teachers;
+
+    Future<void> onDisciplineChanged(int? id) async {
+      disciplineId = id;
+      teacherId = null;
+      filteredTeachers = _teachers;
+      if (id != null) {
+        try {
+          final byDisc = await _teachersRepo.getTeachersByDiscipline(id);
+          final ids = byDisc.map((t) => t.id).whereType<int>().toSet();
+          filteredTeachers = _teachers.where((t) => t.id != null && ids.contains(t.id)).toList();
+        } catch (_) {}
+      }
+    }
+
+    return showDialog<GroupSubjectTeacher>(
+      context: context,
+      builder: (ctx) {
+        return StatefulBuilder(builder: (ctx, setStateDialog) {
+          return Dialog(
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+            child: Padding(
+              padding: const EdgeInsets.all(16),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text('Add assignment', style: TextStyle(fontWeight: FontWeight.bold)),
+                  const SizedBox(height: 12),
+                  DropdownButtonFormField<int>(
+                    decoration: const InputDecoration(labelText: 'Discipline'),
+                    isExpanded: true,
+                    value: disciplineId,
+                    items: [
+                      for (final d in _disciplines)
+                        if (d.id != null) DropdownMenuItem<int>(value: d.id, child: Text(d.name)),
+                    ],
+                    onChanged: (v) async {
+                      await onDisciplineChanged(v);
+                      setStateDialog(() {});
+                    },
+                  ),
+                  const SizedBox(height: 8),
+                  DropdownButtonFormField<int>(
+                    decoration: const InputDecoration(labelText: 'Teacher'),
+                    isExpanded: true,
+                    value: teacherId,
+                    items: [
+                      for (final t in filteredTeachers)
+                        if (t.id != null) DropdownMenuItem<int>(value: t.id, child: Text(t.fullName)),
+                    ],
+                    onChanged: (v) => setStateDialog(() => teacherId = v),
+                  ),
+                  const SizedBox(height: 8),
+                  TextField(
+                    controller: hoursCtrl,
+                    decoration: const InputDecoration(labelText: 'Hours'),
+                    keyboardType: TextInputType.number,
+                  ),
+                  const SizedBox(height: 8),
+                  Row(children: [
+                    Expanded(
+                      child: OutlinedButton(
+                        onPressed: () async {
+                          final now = DateTime.now();
+                          final v = await showDatePicker(context: context, initialDate: start ?? now, firstDate: DateTime(2020), lastDate: DateTime(2035));
+                          if (v != null) setStateDialog(() => start = v);
+                        },
+                        child: Text(start == null ? 'Start date' : '${start!.day.toString().padLeft(2, '0')}.${start!.month.toString().padLeft(2, '0')}.${start!.year}'),
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: OutlinedButton(
+                        onPressed: () async {
+                          final now = DateTime.now();
+                          final v = await showDatePicker(context: context, initialDate: end ?? start ?? now, firstDate: DateTime(2020), lastDate: DateTime(2035));
+                          if (v != null) setStateDialog(() => end = v);
+                        },
+                        child: Text(end == null ? 'End date' : '${end!.day.toString().padLeft(2, '0')}.${end!.month.toString().padLeft(2, '0')}.${end!.year}'),
+                      ),
+                    ),
+                  ]),
+                  const SizedBox(height: 12),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.end,
+                    children: [
+                      TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancel')),
+                      const SizedBox(width: 8),
+                      ElevatedButton(
+                        onPressed: () {
+                          final hours = int.tryParse(hoursCtrl.text.trim()) ?? 0;
+                          if (disciplineId == null || teacherId == null || hours <= 0) return;
+                          String? fmt(DateTime? d) => d == null ? null : '${d.year.toString().padLeft(4, '0')}-${d.month.toString().padLeft(2, '0')}-${d.day.toString().padLeft(2, '0')}';
+                          Navigator.pop(
+                            ctx,
+                            GroupSubjectTeacher(
+                              groupId: groupId,
+                              teacherId: teacherId!,
+                              disciplineId: disciplineId!,
+                              totalHours: hours,
+                              startDate: fmt(start),
+                              endDate: fmt(end),
+                            ),
+                          );
+                        },
+                        child: const Text('Add'),
+                      ),
+                    ],
+                  )
+                ],
+              ),
+            ),
+          );
+        });
+      },
+    );
+  }
+
+  Future<GroupSubjectTeacher?> _showEditAssignmentDialogForEdit(int? groupId, GroupSubjectTeacher current) async {
+    if (groupId == null) return null;
+    int? disciplineId = current.disciplineId;
+    int? teacherId = current.teacherId;
+    final hoursCtrl = TextEditingController(text: current.totalHours.toString());
+    DateTime? start = current.startDate == null ? null : DateTime.tryParse(current.startDate!);
+    DateTime? end = current.endDate == null ? null : DateTime.tryParse(current.endDate!);
+    List<Teacher> filteredTeachers = _teachers;
+
+    Future<void> refreshTeachers() async {
+      if (disciplineId != null) {
+        try {
+          final byDisc = await _teachersRepo.getTeachersByDiscipline(disciplineId!);
+          final ids = byDisc.map((t) => t.id).whereType<int>().toSet();
+          filteredTeachers = _teachers.where((t) => t.id != null && ids.contains(t.id)).toList();
+        } catch (_) {}
+      } else {
+        filteredTeachers = _teachers;
+      }
+    }
+    await refreshTeachers();
+
+    return showDialog<GroupSubjectTeacher>(
+      context: context,
+      builder: (ctx) {
+        return StatefulBuilder(builder: (ctx, setStateDialog) {
+          Future<void> onDisciplineChanged(int? v) async {
+            disciplineId = v;
+            teacherId = null;
+            await refreshTeachers();
+            setStateDialog(() {});
+          }
+
+          return Dialog(
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+            child: Padding(
+              padding: const EdgeInsets.all(16),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text('Edit assignment', style: TextStyle(fontWeight: FontWeight.bold)),
+                  const SizedBox(height: 12),
+                  DropdownButtonFormField<int>(
+                    decoration: const InputDecoration(labelText: 'Discipline'),
+                    isExpanded: true,
+                    value: disciplineId,
+                    items: [
+                      for (final d in _disciplines)
+                        if (d.id != null) DropdownMenuItem<int>(value: d.id, child: Text(d.name)),
+                    ],
+                    onChanged: onDisciplineChanged,
+                  ),
+                  const SizedBox(height: 8),
+                  DropdownButtonFormField<int>(
+                    decoration: const InputDecoration(labelText: 'Teacher'),
+                    isExpanded: true,
+                    value: teacherId,
+                    items: [
+                      for (final t in filteredTeachers)
+                        if (t.id != null) DropdownMenuItem<int>(value: t.id, child: Text(t.fullName)),
+                    ],
+                    onChanged: (v) => setStateDialog(() => teacherId = v),
+                  ),
+                  const SizedBox(height: 8),
+                  TextField(
+                    controller: hoursCtrl,
+                    decoration: const InputDecoration(labelText: 'Hours'),
+                    keyboardType: TextInputType.number,
+                  ),
+                  const SizedBox(height: 8),
+                  Row(children: [
+                    Expanded(
+                      child: OutlinedButton(
+                        onPressed: () async {
+                          final now = DateTime.now();
+                          final v = await showDatePicker(context: context, initialDate: start ?? now, firstDate: DateTime(2020), lastDate: DateTime(2035));
+                          if (v != null) setStateDialog(() => start = v);
+                        },
+                        child: Text(start == null ? 'Start date' : '${start!.day.toString().padLeft(2, '0')}.${start!.month.toString().padLeft(2, '0')}.${start!.year}'),
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: OutlinedButton(
+                        onPressed: () async {
+                          final now = DateTime.now();
+                          final v = await showDatePicker(context: context, initialDate: end ?? start ?? now, firstDate: DateTime(2020), lastDate: DateTime(2035));
+                          if (v != null) setStateDialog(() => end = v);
+                        },
+                        child: Text(end == null ? 'End date' : '${end!.day.toString().padLeft(2, '0')}.${end!.month.toString().padLeft(2, '0')}.${end!.year}'),
+                      ),
+                    ),
+                  ]),
+                  const SizedBox(height: 12),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.end,
+                    children: [
+                      TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancel')),
+                      const SizedBox(width: 8),
+                      ElevatedButton(
+                        onPressed: () {
+                          final hours = int.tryParse(hoursCtrl.text.trim()) ?? 0;
+                          if (disciplineId == null || teacherId == null || hours <= 0) return;
+                          String? fmt(DateTime? d) => d == null ? null : '${d.year.toString().padLeft(4, '0')}-${d.month.toString().padLeft(2, '0')}-${d.day.toString().padLeft(2, '0')}';
+                          Navigator.pop(
+                            ctx,
+                            GroupSubjectTeacher(
+                              groupId: groupId,
+                              teacherId: teacherId!,
+                              disciplineId: disciplineId!,
+                              totalHours: hours,
+                              startDate: fmt(start),
+                              endDate: fmt(end),
+                            ),
+                          );
+                        },
+                        child: const Text('Save'),
+                      ),
+                    ],
+                  )
+                ],
+              ),
+            ),
+          );
+        });
+      },
+    );
   }
 
   @override

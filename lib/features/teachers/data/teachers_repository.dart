@@ -182,6 +182,18 @@ class TeachersRepository {
     return rows;
   }
 
+  // Teachers who are linked to a discipline via teacher_disciplines
+  Future<List<Teacher>> getTeachersByDiscipline(int disciplineId) async {
+    final db = await _db;
+    final rows = await db.rawQuery(
+      'SELECT t.* FROM teachers t '
+      'JOIN teacher_disciplines td ON td.teacher_id = t.id '
+      'WHERE td.discipline_id = ? ORDER BY t.full_name ASC',
+      [disciplineId],
+    );
+    return rows.map((r) => Teacher.fromMap(r)).toList();
+  }
+
   // Teacher-Discipline linking helpers
   Future<List<int>> getTeacherDisciplineIds(int teacherId) async {
     final db = await _db;

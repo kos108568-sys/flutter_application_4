@@ -75,6 +75,167 @@ class _AudiencesPageState extends State<AudiencesScreen> {
     setState(() => isGridView = grid);
   }
 
+  Future<void> _showCreateAudienceDialog() async {
+    final nameController = TextEditingController();
+    final capacityController = TextEditingController();
+    final notesController = TextEditingController();
+    int? typeId;
+    int? buildingId;
+    int? respTeacherId;
+
+    await showDialog(
+      context: context,
+      builder: (context) {
+        return Dialog(
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+          insetPadding: const EdgeInsets.all(20),
+          child: StatefulBuilder(builder: (context, setStateDialog) {
+            return Container(
+              width: 500,
+              padding: const EdgeInsets.all(24),
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(20),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withAlpha(26),
+                    blurRadius: 20,
+                    offset: const Offset(0, 5),
+                  ),
+                ],
+              ),
+              child: SingleChildScrollView(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text('Добавить аудиторию', style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold)),
+                    const SizedBox(height: 20),
+
+                    TextFormField(
+                      controller: nameController,
+                      decoration: InputDecoration(
+                        labelText: 'Название',
+                        filled: true,
+                        fillColor: Colors.grey.shade100,
+                        border: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(12),
+                            borderSide: BorderSide.none),
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+
+                    DropdownButtonFormField<int?>(
+                      value: typeId,
+                      decoration: const InputDecoration(labelText: 'Тип аудитории'),
+                      isExpanded: true,
+                      items: [
+                        const DropdownMenuItem<int?>(value: null, child: Text('Не выбрано')),
+                        ..._types
+                            .where((t) => t.id != null)
+                            .map((t) => DropdownMenuItem<int?>(value: t.id, child: Text(t.name))),
+                      ],
+                      onChanged: (v) => setStateDialog(() => typeId = v),
+                    ),
+                    const SizedBox(height: 12),
+
+                    DropdownButtonFormField<int?>(
+                      value: buildingId,
+                      decoration: const InputDecoration(labelText: 'Здание'),
+                      isExpanded: true,
+                      items: [
+                        const DropdownMenuItem<int?>(value: null, child: Text('Не выбрано')),
+                        ..._buildings
+                            .where((b) => b.id != null)
+                            .map((b) => DropdownMenuItem<int?>(value: b.id, child: Text(b.name))),
+                      ],
+                      onChanged: (v) => setStateDialog(() => buildingId = v),
+                    ),
+                    const SizedBox(height: 12),
+
+                    DropdownButtonFormField<int?>(
+                      value: respTeacherId,
+                      decoration: const InputDecoration(labelText: 'Ответственный преподаватель'),
+                      isExpanded: true,
+                      items: [
+                        const DropdownMenuItem<int?>(value: null, child: Text('Не выбрано')),
+                        ..._teachers
+                            .where((t) => t.id != null)
+                            .map((t) => DropdownMenuItem<int?>(value: t.id, child: Text(t.fullName))),
+                      ],
+                      onChanged: (v) => setStateDialog(() => respTeacherId = v),
+                    ),
+
+                    const SizedBox(height: 12),
+                    TextFormField(
+                      controller: capacityController,
+                      keyboardType: TextInputType.number,
+                      decoration: InputDecoration(
+                        labelText: 'Вместимость',
+                        filled: true,
+                        fillColor: Colors.grey.shade100,
+                        border: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(12),
+                            borderSide: BorderSide.none),
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+
+                    TextFormField(
+                      controller: notesController,
+                      decoration: InputDecoration(
+                        labelText: 'Заметки',
+                        filled: true,
+                        fillColor: Colors.grey.shade100,
+                        border: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(12),
+                            borderSide: BorderSide.none),
+                      ),
+                    ),
+                    const SizedBox(height: 20),
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.end,
+                      children: [
+                        TextButton(
+                          onPressed: () => Navigator.pop(context),
+                          child: const Text('Отменить'),
+                        ),
+                        const SizedBox(width: 12),
+                        ElevatedButton(
+                          onPressed: () async {
+                            final name = nameController.text.trim();
+                            if (name.isEmpty) return; // simple required check
+                            final created = Audience(
+                              name: name,
+                              capacity: int.tryParse(capacityController.text.trim()),
+                              audienceTypeId: typeId,
+                              buildingId: buildingId,
+                              responsibleTeacherId: respTeacherId,
+                              notes: notesController.text.trim().isEmpty
+                                  ? null
+                                  : notesController.text.trim(),
+                            );
+                            await _repo.insertAudience(created);
+                            if (mounted) Navigator.pop(context);
+                          },
+                          style: ElevatedButton.styleFrom(
+                            padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 14),
+                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                          ),
+                          child: const Text('Создать'),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+            );
+          }),
+        );
+      },
+    );
+    await _init();
+  }
+
   Future<void> _showEditAudienceDialog(Audience audience) async {
     final nameController = TextEditingController(text: audience.name);
     final capacityController = TextEditingController(text: (audience.capacity ?? '').toString());
@@ -110,14 +271,13 @@ class _AudiencesPageState extends State<AudiencesScreen> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    const Text('пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ',
-                        style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold)),
+                    const Text('Redaktirovanie auditorii', style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold)),
                     const SizedBox(height: 20),
 
                     TextFormField(
                       controller: nameController,
                       decoration: InputDecoration(
-                        labelText: 'пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ',
+                        labelText: 'Nazvanie',
                         filled: true,
                         fillColor: Colors.grey.shade100,
                         border: OutlineInputBorder(
@@ -126,34 +286,28 @@ class _AudiencesPageState extends State<AudiencesScreen> {
                       ),
                     ),
                     const SizedBox(height: 12),
-                    DropdownButtonFormField<int?>(
-                      value: typeId,
-                      decoration: const InputDecoration(labelText: 'РўРёРї Р°СѓРґРёС‚РѕСЂРёРё'),
+                    DropdownButtonFormField<int?>( value: typeId, decoration: const InputDecoration(labelText: 'Tip auditorii'),
                       isExpanded: true,
                       items: [
-                        const DropdownMenuItem<int?>(value: null, child: Text('РќРµ РІС‹Р±СЂР°РЅ')),
+                        const  DropdownMenuItem<int?>(value: null, child: Text('Ne vybrano')),
                         ..._types.where((t) => t.id != null).map((t) => DropdownMenuItem<int?>(value: t.id, child: Text(t.name))),
                       ],
                       onChanged: (v) => setStateDialog(() => typeId = v),
                     ),
                     const SizedBox(height: 12),
-                    DropdownButtonFormField<int?>(
-                      value: buildingId,
-                      decoration: const InputDecoration(labelText: 'РљРѕСЂРїСѓСЃ'),
+                    DropdownButtonFormField<int?>( value: typeId, decoration: const InputDecoration(labelText: 'Tip auditorii'),
                       isExpanded: true,
                       items: [
-                        const DropdownMenuItem<int?>(value: null, child: Text('РќРµ РІС‹Р±СЂР°РЅ')),
+                        const DropdownMenuItem<int?>(value: null, child: Text('Ne vybrano')),
                         ..._buildings.where((b) => b.id != null).map((b) => DropdownMenuItem<int?>(value: b.id, child: Text(b.name))),
                       ],
                       onChanged: (v) => setStateDialog(() => buildingId = v),
                     ),
                     const SizedBox(height: 12),
-                    DropdownButtonFormField<int?>(
-                      value: respTeacherId,
-                      decoration: const InputDecoration(labelText: 'РћС‚РІРµС‚СЃС‚РІРµРЅРЅС‹Р№ РїСЂРµРїРѕРґР°РІР°С‚РµР»СЊ'),
+                    DropdownButtonFormField<int?>( value: typeId, decoration: const InputDecoration(labelText: 'Tip auditorii'),
                       isExpanded: true,
                       items: [
-                        const DropdownMenuItem<int?>(value: null, child: Text('РќРµ РІС‹Р±СЂР°РЅ')),
+                        const DropdownMenuItem<int?>(value: null, child: Text('Ne vybrano')),
                         ..._teachers.where((t) => t.id != null).map((t) => DropdownMenuItem<int?>(value: t.id, child: Text(t.fullName))),
                       ],
                       onChanged: (v) => setStateDialog(() => respTeacherId = v),
@@ -163,7 +317,7 @@ class _AudiencesPageState extends State<AudiencesScreen> {
                       controller: capacityController,
                       keyboardType: TextInputType.number,
                       decoration: InputDecoration(
-                        labelText: 'пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ',
+                        labelText: 'Nazvanie',
                         filled: true,
                         fillColor: Colors.grey.shade100,
                         border: OutlineInputBorder(
@@ -176,7 +330,7 @@ class _AudiencesPageState extends State<AudiencesScreen> {
                     TextFormField(
                       controller: notesController,
                       decoration: InputDecoration(
-                        labelText: 'пїЅпїЅпїЅпїЅпїЅпїЅпїЅ',
+                        labelText: 'Zametki',
                         filled: true,
                         fillColor: Colors.grey.shade100,
                         border: OutlineInputBorder(
@@ -190,7 +344,7 @@ class _AudiencesPageState extends State<AudiencesScreen> {
                       children: [
                         TextButton(
                           onPressed: () => Navigator.pop(context),
-                          child: const Text('пїЅпїЅпїЅпїЅпїЅпїЅ'),
+                          child: const Text('Otmenit\''),
                         ),
                         const SizedBox(width: 12),
                         ElevatedButton(
@@ -212,7 +366,7 @@ class _AudiencesPageState extends State<AudiencesScreen> {
                           style: ElevatedButton.styleFrom(
                               padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 14),
                               shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12))),
-                          child: const Text('пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ'),
+                          child: const Text('Sohranit\''),
                         )
                       ],
                     )
@@ -262,6 +416,7 @@ class _AudiencesPageState extends State<AudiencesScreen> {
                     onSortChanged: _onSortChanged,
                     onViewChanged: _onViewChanged,
                     isGridView: isGridView,
+                    onAddPressed: _showCreateAudienceDialog,
                   ),
                   const SizedBox(height: 24),
 
@@ -326,5 +481,12 @@ class _AudiencesPageState extends State<AudiencesScreen> {
     );
   }
 }
+
+
+
+
+
+
+
 
 

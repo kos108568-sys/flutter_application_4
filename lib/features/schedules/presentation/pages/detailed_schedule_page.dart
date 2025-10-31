@@ -1,4 +1,4 @@
-import 'dart:math';
+﻿import 'dart:math';
 import 'package:flutter/material.dart';
 import '../../../../core/constants/app_colors.dart';
 import '../../../../core/widgets/sidebar_menu.dart';
@@ -12,6 +12,8 @@ import '../../../audiences/data/audiences_repository.dart';
 import '../../../audiences/data/audience_model.dart';
 import '../../../groups/data/groups_repository.dart';
 import '../../../groups/data/group_model.dart';
+import '../../../gst/data/group_subject_teachers_repository.dart';
+import '../../../gst/data/group_subject_teacher_model.dart';
 import 'package:flutter/services.dart';
 
 class DetailedSchedulePage extends StatefulWidget {
@@ -26,6 +28,7 @@ class _DetailedSchedulePageState extends State<DetailedSchedulePage> {
   final teachersRepo = TeachersRepository();
   final audiencesRepo = AudiencesRepository();
   final groupsRepo = GroupsRepository();
+  final gstRepo = GroupSubjectTeachersRepository();
 
   final times = ['08:00 - 09:30', '09:40 - 11:10', '11:20 - 12:50', '13:10 - 14:40', '14:50 - 16:20'];
   final lessonTypes = ['Лекция', 'Практика', 'Лабораторная', 'Семинар'];
@@ -42,6 +45,7 @@ class _DetailedSchedulePageState extends State<DetailedSchedulePage> {
   List<Teacher> allTeachers = [];
   List<Audience> allAudiences = [];
   List<GroupModel> allGroups = [];
+  List<GroupSubjectTeacher> assignments = [];
   
   // Search & drag
   String searchQuery = '';
@@ -140,7 +144,12 @@ class _DetailedSchedulePageState extends State<DetailedSchedulePage> {
          ],
        ),
      ),
-    );
+    
+      floatingActionButton: FloatingActionButton.extended(
+        onPressed: _generateSchedule,
+        icon: const Icon(Icons.auto_mode_rounded),
+        label: const Text('Сгенерировать'),
+      ));
    }
 
     Widget _buildTopBar() {
@@ -391,6 +400,76 @@ class _DetailedSchedulePageState extends State<DetailedSchedulePage> {
         );
       },
     );
+  }
+
+  Future<void> _generateSchedule() async {
+    if (selectedGroupId == 0) return;
+    try { assignments = await gstRepo.getByGroup(selectedGroupId); } catch (_) { assignments = []; }
+    if (assignments.isEmpty) {
+      if (!mounted) return; 
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Нет назначений для группы')));
+      return;
+    }
+
+    // Load all lessons for the current week (all groups) to check conflicts
+    List<LessonModel> weekLessonsAll = await lessonsRepo.getAll(weekStart: currentWeekStart);
+
+    bool teacherBusy(int d, int p, int tid) => weekLessonsAll.any((l) => l.dayOfWeek == d && l.pairNo == p && l.teacherId == tid);
+    bool groupBusy(int d, int p, int gid) => weekLessonsAll.any((l) => l.dayOfWeek == d && l.pairNo == p && l.groupId == gid);
+    bool audienceBusy(int d, int p, int aid) => weekLessonsAll.any((l) => l.dayOfWeek == d && l.pairNo == p && l.audienceId == aid);
+
+    final pairsPerDay = times.length.clamp(4, 6);
+    int rr = 0;
+
+    for (int dayIdx = 0; dayIdx < 6; dayIdx++) {
+      for (int pairIdx = 0; pairIdx < pairsPerDay; pairIdx++) {
+        if (groupBusy(dayIdx, pairIdx, selectedGroupId)) continue;
+        final date = currentWeekStart.add(Duration(days: dayIdx));
+        bool placed = false;
+        for (int k = 0; k < assignments.length; k++) {
+          final a = assignments[(rr + k) % assignments.length];
+          final aStart = a.startDate == null ? null : DateTime.tryParse(a.startDate!);
+          final aEnd = a.endDate == null ? null : DateTime.tryParse(a.endDate!);
+          if (aStart != null && date.isBefore(aStart)) continue;
+          if (aEnd != null && date.isAfter(aEnd)) continue;
+          if (teacherBusy(dayIdx, pairIdx, a.teacherId)) continue;
+
+          int? freeAud;
+          for (final aud in allAudiences) {
+            final aid = aud.id;
+            if (aid == null) continue;
+            if (!audienceBusy(dayIdx, pairIdx, aid)) { freeAud = aid; break; }
+          }
+          if (freeAud == null) continue;
+
+          final lesson = LessonModel(
+            disciplineId: a.disciplineId,
+            type: lessonTypes.first,
+            teacherId: a.teacherId,
+            audienceId: freeAud,
+            groupId: selectedGroupId,
+            pairNo: pairIdx,
+            dayOfWeek: dayIdx,
+            date: date,
+            subgroup: '1 подгруппа',
+          );
+          try {
+            await lessonsRepo.insertWithSync(lesson);
+            weekLessonsAll.add(lesson);
+            rr = (rr + k + 1) % assignments.length;
+            placed = true;
+            break;
+          } catch (_) {}
+        }
+        if (!placed) {
+          // no feasible option; leave empty
+        }
+      }
+    }
+
+    await _loadLessons();
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Расписание сгенерировано')));
   }
 
   Widget _buildLessonCardWithColor(LessonModel lesson, int pairIdx, int dayIdx, Color cardColor) {

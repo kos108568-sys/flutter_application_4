@@ -35,8 +35,7 @@ class _DisciplinesPageState extends State<DisciplinesPage> {
   }
 
   Future<void> _init() async {
-    await _repo.seedIfEmpty();
-    // Try to sync with Supabase so remote/local are consistent
+    // Ne sozdaem predmety po umolchaniyu; tolko sinhronizacia\r\n    // Try to sync with Supabase so remote/local are consistent
     try { await _repo.syncDisciplines(); } catch (_) {}
     try { _lessonTypes = await _lessonTypesRepo.getAllLessonTypes(orderBy: 'name ASC'); } catch (_) {}
     try { _teachers = await _teachersRepo.getAllTeachers(orderBy: 'full_name ASC'); } catch (_) {}
@@ -75,7 +74,7 @@ class _DisciplinesPageState extends State<DisciplinesPage> {
     int? lessonTypeId = d.lessonTypeId;
     final selectedTeacherIds = <int>{...await _repo.getTeacherIdsByDiscipline(d.id ?? -1)};
 
-    await showDialog(
+    final action = await showDialog<String>(
       context: context,
       builder: (ctx) => Dialog(
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
@@ -130,12 +129,34 @@ class _DisciplinesPageState extends State<DisciplinesPage> {
                   ],
                 ),
                 const SizedBox(height: 16),
-                SizedBox(
-                  width: double.infinity,
-                  child: ElevatedButton(
-                    onPressed: () => Navigator.pop(ctx, true),
-                    child: const Text('Sohranit\''),
-                  ),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    OutlinedButton(
+                      style: OutlinedButton.styleFrom(foregroundColor: Colors.red),
+                      onPressed: () async {
+                        final ok = await showDialog<bool>(
+                          context: ctx,
+                          builder: (c) => AlertDialog(
+                            title: const Text("Udalit' distsiplinu?"),
+                            content: Text("Vy uvereny, chto hotite udalit' \"${d.name}\"?"),
+                            actions: [
+                              TextButton(onPressed: () => Navigator.pop(c, false), child: const Text('Otmenit\'')),
+                              TextButton(onPressed: () => Navigator.pop(c, true), child: const Text('Udalit\'')),
+                            ],
+                          ),
+                        );
+                        if (ok == true) {
+                          Navigator.pop(ctx, 'delete');
+                        }
+                      },
+                      child: const Text('Udalit\''),
+                    ),
+                    ElevatedButton(
+                      onPressed: () => Navigator.pop(ctx, 'save'),
+                      child: const Text('Sohranit\''),
+                    ),
+                  ],
                 )
               ],
             ),
@@ -143,17 +164,26 @@ class _DisciplinesPageState extends State<DisciplinesPage> {
         ),
       ),
     );
-    final updated = Discipline(
-      id: d.id,
-      name: name.text.trim(),
-      lessonTypeId: lessonTypeId,
-      semester: semester.text.trim().isEmpty ? null : semester.text.trim(),
-    );
-    await _repo.updateDiscipline(updated);
-    if (updated.id != null) {
-      await _repo.setDisciplineTeachers(updated.id!, selectedTeacherIds.toList());
+    if (action == 'delete') {
+      if (d.id != null) {
+        await _repo.deleteDiscipline(d.id!);
+      }
+      await _init();
+      return;
     }
-    await _init();
+    if (action == 'save') {
+      final updated = Discipline(
+        id: d.id,
+        name: name.text.trim(),
+        lessonTypeId: lessonTypeId,
+        semester: semester.text.trim().isEmpty ? null : semester.text.trim(),
+      );
+      await _repo.updateDiscipline(updated);
+      if (updated.id != null) {
+        await _repo.setDisciplineTeachers(updated.id!, selectedTeacherIds.toList());
+      }
+      await _init();
+    }
   }
 
   Future<void> _addDiscipline() async {
@@ -286,7 +316,7 @@ class _DisciplinesPageState extends State<DisciplinesPage> {
                   ),
                   const SizedBox(height: 16),
                   Expanded(
-                    child: isGrid
+                    child: filtered.isEmpty ? const Center(child: Text('Net predmetov')) : isGrid
                         ? GridView.builder(
                             padding: EdgeInsets.zero,
                             gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
@@ -446,3 +476,4 @@ class _SelectItemsDialogState extends State<_SelectItemsDialog> {
     );
   }
 }
+

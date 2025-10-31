@@ -1,4 +1,4 @@
-import 'dart:async';
+﻿import 'dart:async';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../features/audiences/data/audiences_repository.dart';
@@ -14,6 +14,7 @@ import '../../features/disciplines/data/disciplines_repository.dart';
 import '../../features/groups/data/groups_repository.dart';
 import '../../features/audiences/data/audience_equipments_repository.dart';
 import '../../features/gst/data/group_subject_teachers_repository.dart';
+import '../../features/schedules/data/lessons_repository.dart';
 // import 'sync_logger.dart';
 
 class SyncService {
@@ -30,6 +31,7 @@ class SyncService {
   final _groupsRepo = GroupsRepository();
   final _audEquipRepo = AudienceEquipmentsRepository();
   final _gstRepo = GroupSubjectTeachersRepository();
+  final _lessonsRepo = LessonsRepository();
   final supabase = Supabase.instance.client;
 
   // last pull tracking currently unused
@@ -160,7 +162,14 @@ class SyncService {
         try {
           await _gstRepo.syncGST();
         } catch (e) {
-          print('Ошибка при синхронизации group_subject_teachers: $e');
+          print('GST sync error: ' + e.toString());
+        }
+      });
+      Future.microtask(() async {
+        try {
+          await _lessonsRepo.syncLessons();
+        } catch (e) {
+          print('Lessons sync error: ' + e.toString());
         }
       });
     } catch (e) {
@@ -168,3 +177,4 @@ class SyncService {
     }
   }
 }
+

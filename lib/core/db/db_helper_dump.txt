@@ -29,7 +29,27 @@ class DBHelper {
       onUpgrade: (db, oldVersion, newVersion) async {
         if (oldVersion < 2) {
           await db.execute('''
-            CREATE TABLE IF NOT EXISTS disciplines (
+                await db.execute('''
+      CREATE TABLE IF NOT EXISTS lessons (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        discipline_id INTEGER NOT NULL,
+        type TEXT,
+        teacher_id INTEGER NOT NULL,
+        audience_id INTEGER NOT NULL,
+        group_id INTEGER NOT NULL,
+        pair_no INTEGER NOT NULL,
+        day_of_week INTEGER NOT NULL,
+        date TEXT NOT NULL,
+        subgroup TEXT,
+        FOREIGN KEY (discipline_id) REFERENCES disciplines(id),
+        FOREIGN KEY (teacher_id) REFERENCES teachers(id),
+        FOREIGN KEY (audience_id) REFERENCES audiences(id),
+        FOREIGN KEY (group_id) REFERENCES groups(id)
+      );
+    ''');
+    await db.execute('CREATE INDEX IF NOT EXISTS idx_lessons_date ON lessons(date);');
+    await db.execute('\n    await db.execute('CREATE UNIQUE INDEX IF NOT EXISTS uq_lessons_group_date_pair ON lessons(group_id, date, pair_no, subgroup);');');
+CREATE TABLE IF NOT EXISTS disciplines (
               id INTEGER PRIMARY KEY AUTOINCREMENT,
               name TEXT NOT NULL,
               teacher TEXT,
@@ -227,27 +247,6 @@ class DBHelper {
         FOREIGN KEY (responsible_teacher_id) REFERENCES teachers(id)
       );
     ''');
-    await db.execute('''
-      CREATE TABLE IF NOT EXISTS lessons (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        discipline_id INTEGER NOT NULL,
-        type TEXT,
-        teacher_id INTEGER NOT NULL,
-        audience_id INTEGER NOT NULL,
-        group_id INTEGER NOT NULL,
-        pair_no INTEGER NOT NULL,
-        day_of_week INTEGER NOT NULL,
-        date TEXT NOT NULL,
-        subgroup TEXT,
-        FOREIGN KEY (discipline_id) REFERENCES disciplines(id),
-        FOREIGN KEY (teacher_id) REFERENCES teachers(id),
-        FOREIGN KEY (audience_id) REFERENCES audiences(id),
-        FOREIGN KEY (group_id) REFERENCES groups(id)
-      );
-    ''');
-    await db.execute('CREATE INDEX IF NOT EXISTS idx_lessons_date ON lessons(date);');
-    await db.execute('CREATE INDEX IF NOT EXISTS idx_lessons_group_date ON lessons(group_id, date);');
-    await db.execute('CREATE UNIQUE INDEX IF NOT EXISTS uq_lessons_group_date_pair ON lessons(group_id, date, pair_no, subgroup);');
     await db.execute('''
       CREATE TABLE IF NOT EXISTS disciplines (
         id INTEGER PRIMARY KEY AUTOINCREMENT,

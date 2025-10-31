@@ -30,7 +30,15 @@ class AudiencesRepository {
   // Сохранение локально
   Future<int> _insertLocal(Audience a) async {
     final db = await _db;
-    return await db.insert('audiences', a.toMap());
+    final map = Map<String, Object?>.from(a.toMap());
+    try {
+      final cols = await db.rawQuery('PRAGMA table_info(audiences)');
+      final hasType = cols.any((c) => (c['name'] as String).toString().toLowerCase() == 'type');
+      if (hasType && !map.containsKey('type')) {
+        map['type'] = '';
+      }
+    } catch (_) {}
+    return await db.insert('audiences', map);
   }
 
   // Сохранение локально
@@ -151,7 +159,15 @@ class AudiencesRepository {
               'responsible_teacher_id': r['responsible_teacher_id'],
               'notes': r['notes'],
             });
-            await db.insert('audiences', mapped.toMap(), conflictAlgorithm: ConflictAlgorithm.ignore);
+            final insertMap = Map<String, Object?>.from(mapped.toMap());
+            try {
+              final cols = await db.rawQuery('PRAGMA table_info(audiences)');
+              final hasType = cols.any((c) => (c['name'] as String).toString().toLowerCase() == 'type');
+              if (hasType && !insertMap.containsKey('type')) {
+                insertMap['type'] = '';
+              }
+            } catch (_) {}
+            await db.insert('audiences', insertMap, conflictAlgorithm: ConflictAlgorithm.ignore);
           } catch (_) {}
         }
       }

@@ -1,4 +1,4 @@
-import 'package:flutter/material.dart';
+﻿import 'package:flutter/material.dart';
 
 import '../../../../core/widgets/sidebar_menu.dart';
 import '../../../disciplines/data/discipline_model.dart';
@@ -100,6 +100,7 @@ class _GroupsPageState extends State<GroupsPage> {
         disciplines: _allDisc.where((d) => d.id != null).toList(),
         teachers: _teachers.where((t) => t.id != null).toList(),
         gstRepo: _gstRepo,
+        teachersRepo: _teachersRepo,
       ),
     );
     if (res != null) {
@@ -142,7 +143,8 @@ class _GroupsPageState extends State<GroupsPage> {
                     ),
                   ],
                 ),
-                child: Column(
+                child: SingleChildScrollView(
+                  child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   mainAxisSize: MainAxisSize.min,
                   children: [
@@ -279,6 +281,7 @@ class _GroupsPageState extends State<GroupsPage> {
                     )
                   ],
                 ),
+                ),
               ),
             ),
           ),
@@ -292,8 +295,9 @@ class _AssignmentDialog extends StatefulWidget {
   final List<Discipline> disciplines;
   final List<Teacher> teachers;
   final GroupSubjectTeachersRepository gstRepo;
+  final TeachersRepository teachersRepo;
 
-  const _AssignmentDialog({required this.disciplines, required this.teachers, required this.gstRepo});
+  const _AssignmentDialog({required this.disciplines, required this.teachers, required this.gstRepo, required this.teachersRepo});
 
   @override
   State<_AssignmentDialog> createState() => _AssignmentDialogState();
@@ -306,11 +310,13 @@ class _AssignmentDialogState extends State<_AssignmentDialog> {
   DateTime? _start;
   DateTime? _end;
   List<Teacher> _filteredTeachers = [];
+  bool _triedSubmit = false;
 
   @override
   void initState() {
     super.initState();
     _filteredTeachers = widget.teachers;
+    _hoursCtrl.text = '2';
   }
 
   @override
@@ -319,21 +325,18 @@ class _AssignmentDialogState extends State<_AssignmentDialog> {
     super.dispose();
   }
 
-  Future<void> _onDisciplineChanged(int? id) async {
+    Future<void> _onDisciplineChanged(int? id) async {
     setState(() {
       _disciplineId = id;
       _teacherId = null;
       _filteredTeachers = widget.teachers;
     });
     if (id != null) {
-      // Фильтруем: показываем только тех преподавателей, у кого уже есть связи по этому предмету
-      final byDisc = await widget.gstRepo.teachersByDiscipline(id);
-      if (mounted && byDisc.isNotEmpty) {
-        setState(() {
-          final ids = byDisc.map((t) => t.id).toSet();
-          _filteredTeachers = widget.teachers.where((t) => t.id != null && ids.contains(t.id)).toList();
-        });
-      }
+      final byDisc = await widget.teachersRepo.getTeachersByDiscipline(id);
+      setState(() {
+        final ids = byDisc.map((t) => t.id).whereType<int>().toSet();
+        _filteredTeachers = widget.teachers.where((t) => t.id != null && ids.contains(t.id)).toList();
+      });
     }
   }
 
@@ -350,8 +353,14 @@ class _AssignmentDialogState extends State<_AssignmentDialog> {
   }
 
   void _submit() {
+    setState(() => _triedSubmit = true);
     final hours = int.tryParse(_hoursCtrl.text.trim()) ?? 0;
-    if (_disciplineId == null || _teacherId == null || hours <= 0) return;
+    if (_disciplineId == null || _teacherId == null || hours <= 0) {
+      try {
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Заполните дисциплину, преподавателя и корректные часы')));
+      } catch (_) {}
+      return;
+    }
     final fmt = (DateTime? d) => d == null ? null : '${d.year.toString().padLeft(4, '0')}-${d.month.toString().padLeft(2, '0')}-${d.day.toString().padLeft(2, '0')}';
     Navigator.pop(context, GroupSubjectTeacher(
       groupId: 0, // будет заменено вызывающей стороной после insert группы
@@ -376,7 +385,10 @@ class _AssignmentDialogState extends State<_AssignmentDialog> {
             const Text('Добавить назначение предмета', style: TextStyle(fontWeight: FontWeight.bold)),
             const SizedBox(height: 12),
             DropdownButtonFormField<int>(
-              decoration: const InputDecoration(labelText: 'Предмет'),
+              decoration: InputDecoration(
+                labelText: 'Дисциплина',
+                errorText: _triedSubmit && _disciplineId == null ? 'Выберите дисциплину' : null,
+              ),
               isExpanded: true,
               value: _disciplineId,
               items: [
@@ -387,7 +399,10 @@ class _AssignmentDialogState extends State<_AssignmentDialog> {
             ),
             const SizedBox(height: 8),
             DropdownButtonFormField<int>(
-              decoration: const InputDecoration(labelText: 'Преподаватель'),
+              decoration: InputDecoration(
+                labelText: 'Дисциплина',
+                errorText: _triedSubmit && _disciplineId == null ? 'Выберите дисциплину' : null,
+              ),
               isExpanded: true,
               value: _teacherId,
               items: [
@@ -397,9 +412,12 @@ class _AssignmentDialogState extends State<_AssignmentDialog> {
               onChanged: (v) => setState(() => _teacherId = v),
             ),
             const SizedBox(height: 8),
-            TextField(
+            TextFormField(
               controller: _hoursCtrl,
-              decoration: const InputDecoration(labelText: 'Всего часов'),
+              decoration: InputDecoration(
+                labelText: 'Часы',
+                errorText: _triedSubmit && (int.tryParse(_hoursCtrl.text.trim()) ?? 0) <= 0 ? 'Укажите положительное число часов' : null,
+              ),
               keyboardType: TextInputType.number,
             ),
             const SizedBox(height: 8),
@@ -423,3 +441,7 @@ class _AssignmentDialogState extends State<_AssignmentDialog> {
     );
   }
 }
+
+
+
+

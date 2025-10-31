@@ -20,7 +20,6 @@ class _RecentDisciplinesWidgetState extends State<RecentDisciplinesWidget> {
   }
 
   Future<void> _init() async {
-    await _repo.seedIfEmpty();
     await _load();
   }
 
@@ -161,3 +160,4 @@ class _AddDisciplineDialogState extends State<_AddDisciplineDialog> {
     );
   }
 }
+

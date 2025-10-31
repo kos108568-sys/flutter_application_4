@@ -69,8 +69,7 @@ class GroupsRepository {
     final count = Sqflite.firstIntValue(await db.rawQuery('SELECT COUNT(*) FROM groups')) ?? 0;
     if (count > 0) return;
     final samples = [
-      GroupModel(name: 'PO-42', size: 30, curator: 'I. I. Ivanov', course: 2, specialty: 'Programmnaya inzheneriya', disciplineIds: const [], studentCount: 30),
-      GroupModel(name: 'PO-41', size: 28, curator: 'P. P. Petrov', course: 2, specialty: 'Programmnaya inzheneriya', disciplineIds: const [], studentCount: 28),
+      
     ];
     for (final g in samples) {
       await _insertLocal(g);
