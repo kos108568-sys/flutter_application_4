@@ -2,6 +2,7 @@
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../features/audiences/data/audiences_repository.dart';
+import '../../features/audiences/data/audience_lesson_types_repository.dart';
 import '../../features/departments/data/department_repository.dart';
 import '../../features/audience_types/data/audience_type_repository.dart';
 import '../../features/lesson_types/data/lesson_type_repository.dart';
@@ -30,6 +31,7 @@ class SyncService {
   final _disciplinesRepo = DisciplinesRepository();
   final _groupsRepo = GroupsRepository();
   final _audEquipRepo = AudienceEquipmentsRepository();
+  final _audLessonTypesRepo = AudienceLessonTypesRepository();
   final _gstRepo = GroupSubjectTeachersRepository();
   final _lessonsRepo = LessonsRepository();
   final supabase = Supabase.instance.client;
@@ -154,6 +156,15 @@ class SyncService {
           await _audEquipRepo.syncAudienceEquipments();
         } catch (e) {
           print('Ошибка при синхронизации audience_equipments: $e');
+        }
+      });
+
+      // Синхронизация связей аудитория-тип занятия (асинхронно)
+      Future.microtask(() async {
+        try {
+          await _audLessonTypesRepo.syncAudienceLessonTypes();
+        } catch (e) {
+          print('Ошибка при синхронизации audience_lesson_types: $e');
         }
       });
 

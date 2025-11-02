@@ -1,394 +1,231 @@
 import 'package:flutter/material.dart';
-import 'package:flutter_application_4/core/widgets/sidebar_menu.dart';
+
+import '../../../../core/widgets/sidebar_menu.dart';
+import '../../../buildings/data/building_repository.dart';
+import '../../../lesson_types/data/lesson_type_repository.dart';
+import '../../../teachers/data/teachers_repository.dart';
+import '../../../audience_types/data/audience_type_model.dart';
+import '../../../audience_types/data/audience_type_repository.dart';
 import '../../data/audience_model.dart';
 import '../../data/audiences_repository.dart';
+import '../widgets/audience_editor_dialog.dart';
 import '../widgets/audience_card.dart';
 import '../widgets/audience_filter_bar.dart';
 import '../widgets/audience_types_widget.dart';
 import '../widgets/recent_audiences_widget.dart';
-import '../../../audience_types/data/audience_type_repository.dart';
-import '../../../audience_types/data/audience_type_model.dart';
-import '../../../buildings/data/building_repository.dart';
-import '../../../buildings/data/building_model.dart';
-import '../../../teachers/data/teachers_repository.dart';
+import '../../../lesson_types/data/lesson_type_model.dart';
 import '../../../teachers/data/teacher_model.dart';
+import '../../../buildings/data/building_model.dart';
 
 class AudiencesScreen extends StatefulWidget {
   const AudiencesScreen({super.key});
 
   @override
-  State<AudiencesScreen> createState() => _AudiencesPageState();
+  State<AudiencesScreen> createState() => _AudiencesScreenState();
 }
 
-class _AudiencesPageState extends State<AudiencesScreen> {
-  final _repo = AudiencesRepository();
-  final _typeRepo = AudienceTypeRepository();
+class _AudiencesScreenState extends State<AudiencesScreen> {
+  final _audiencesRepo = AudiencesRepository();
   final _buildingRepo = BuildingRepository();
   final _teachersRepo = TeachersRepository();
-  List<Audience> allItems = [];
-  List<Audience> filteredItems = [];
-  bool isGridView = true;
-  List<AudienceType> _types = [];
+  final _lessonTypesRepo = LessonTypeRepository();
+  final _audienceTypeRepo = AudienceTypeRepository();
+
+  List<Audience> _allAudiences = [];
+  List<Audience> _filteredAudiences = [];
   List<Building> _buildings = [];
   List<Teacher> _teachers = [];
+  List<LessonType> _lessonTypes = [];
+  List<AudienceType> _audienceTypes = [];
+
+  late Map<int, String> _buildingNameById = {};
+  late Map<int, Teacher> _teacherById = {};
+  late Map<int, String> _lessonTypeNameById = {};
+
+  bool _isGridView = true;
+  bool _isLoading = false;
 
   @override
   void initState() {
     super.initState();
-    _init();
+    _loadData();
   }
 
-  Future<void> _init() async {
-    
-    try { await _repo.syncAudiences(); } catch (_) {}
-    try { _types = await _typeRepo.getAllAudienceTypes(orderBy: 'name ASC'); } catch (_) {}
-    try { _buildings = await _buildingRepo.getAllBuildings(); } catch (_) {}
-    try { _teachers = await _teachersRepo.getAllTeachers(orderBy: 'full_name ASC'); } catch (_) {}
-    final items = await _repo.getAllAudiences(orderBy: 'name ASC');
-    if (!mounted) return;
+  Future<void> _loadData() async {
     setState(() {
-      allItems = items;
-      filteredItems = List.from(items);
+      _isLoading = true;
+    });
+
+    try {
+      await _audiencesRepo.syncAudiences();
+    } catch (_) {}
+    try {
+      await _teachersRepo.syncTeachers();
+    } catch (_) {}
+    try {
+      await _lessonTypesRepo.syncLessonTypes();
+    } catch (_) {}
+    try {
+      await _buildingRepo.syncBuildings();
+    } catch (_) {}
+    try {
+      await _audienceTypeRepo.syncAudienceTypes();
+    } catch (_) {}
+
+    List<Audience> audiences = [];
+    List<Building> buildings = [];
+    List<Teacher> teachers = [];
+    List<LessonType> lessonTypes = [];
+    List<AudienceType> audienceTypes = [];
+
+    try {
+      audiences = await _audiencesRepo.getAllAudiences(orderBy: 'name ASC');
+    } catch (_) {}
+
+    try {
+      buildings = await _buildingRepo.getAllBuildings();
+    } catch (_) {}
+
+    try {
+      teachers = await _teachersRepo.getAllTeachers(orderBy: 'full_name ASC');
+    } catch (_) {}
+
+    try {
+      lessonTypes = await _lessonTypesRepo.getAllLessonTypes(orderBy: 'name ASC');
+    } catch (_) {}
+
+    try {
+      audienceTypes = await _audienceTypeRepo.getAllAudienceTypes(orderBy: 'name ASC');
+    } catch (_) {}
+
+    if (!mounted) return;
+
+    setState(() {
+      _allAudiences = audiences;
+      _filteredAudiences = List.from(audiences);
+      _buildings = buildings;
+      _teachers = teachers;
+      _lessonTypes = lessonTypes;
+      _audienceTypes = audienceTypes;
+
+      _buildingNameById = {
+        for (final building in buildings.where((b) => b.id != null)) building.id!: building.name,
+      };
+      _teacherById = {
+        for (final teacher in teachers.where((t) => t.id != null)) teacher.id!: teacher,
+      };
+      _lessonTypeNameById = {
+        for (final lessonType in lessonTypes.where((t) => t.id != null)) lessonType.id!: lessonType.name,
+      };
+      _isLoading = false;
     });
   }
 
   void _onFilterChanged(String query) {
+    final lower = query.toLowerCase();
     setState(() {
-      filteredItems = allItems.where((item) => item.name.toLowerCase().contains(query.toLowerCase())).toList();
+      _filteredAudiences = _allAudiences.where((audience) {
+        final teacherName = audience.teacherId != null ? _teacherById[audience.teacherId!]?.fullName ?? '' : '';
+        final buildingName = audience.buildingId != null ? _buildingNameById[audience.buildingId!] ?? '' : '';
+        final lessonNames = audience.lessonTypeIds
+            .map((id) => _lessonTypeNameById[id] ?? '')
+            .where((name) => name.isNotEmpty)
+            .join(' ');
+
+        return audience.name.toLowerCase().contains(lower) ||
+            (audience.type ?? '').toLowerCase().contains(lower) ||
+            teacherName.toLowerCase().contains(lower) ||
+            buildingName.toLowerCase().contains(lower) ||
+            lessonNames.toLowerCase().contains(lower);
+      }).toList();
     });
   }
 
   void _onSortChanged(String sortBy) {
     setState(() {
       switch (sortBy) {
-        case 'name':
-          filteredItems.sort((a, b) => a.name.compareTo(b.name));
-          break;
         case 'capacity':
-          filteredItems.sort((a, b) => (a.capacity ?? 0).compareTo(b.capacity ?? 0));
+          _filteredAudiences.sort(
+            (a, b) => (a.capacity ?? 0).compareTo(b.capacity ?? 0),
+          );
+          break;
+        case 'type':
+          _filteredAudiences.sort(
+            (a, b) => (a.type ?? '').compareTo(b.type ?? ''),
+          );
+          break;
+        case 'name':
+        default:
+          _filteredAudiences.sort(
+            (a, b) => a.name.compareTo(b.name),
+          );
           break;
       }
     });
   }
 
-  void _onViewChanged(bool grid) {
-    setState(() => isGridView = grid);
+  void _onViewChanged(bool isGrid) {
+    setState(() => _isGridView = isGrid);
   }
 
   Future<void> _showCreateAudienceDialog() async {
-    final nameController = TextEditingController();
-    final capacityController = TextEditingController();
-    final notesController = TextEditingController();
-    int? typeId;
-    int? buildingId;
-    int? respTeacherId;
-
-    await showDialog(
+    final result = await showDialog<Audience>(
       context: context,
-      builder: (context) {
-        return Dialog(
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-          insetPadding: const EdgeInsets.all(20),
-          child: StatefulBuilder(builder: (context, setStateDialog) {
-            return Container(
-              width: 500,
-              padding: const EdgeInsets.all(24),
-              decoration: BoxDecoration(
-                color: Colors.white,
-                borderRadius: BorderRadius.circular(20),
-                boxShadow: [
-                  BoxShadow(
-                    color: Colors.black.withAlpha(26),
-                    blurRadius: 20,
-                    offset: const Offset(0, 5),
-                  ),
-                ],
-              ),
-              child: SingleChildScrollView(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    const Text('Добавить аудиторию', style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold)),
-                    const SizedBox(height: 20),
-
-                    TextFormField(
-                      controller: nameController,
-                      decoration: InputDecoration(
-                        labelText: 'Название',
-                        filled: true,
-                        fillColor: Colors.grey.shade100,
-                        border: OutlineInputBorder(
-                            borderRadius: BorderRadius.circular(12),
-                            borderSide: BorderSide.none),
-                      ),
-                    ),
-                    const SizedBox(height: 12),
-
-                    DropdownButtonFormField<int?>(
-                      value: typeId,
-                      decoration: const InputDecoration(labelText: 'Тип аудитории'),
-                      isExpanded: true,
-                      items: [
-                        const DropdownMenuItem<int?>(value: null, child: Text('Не выбрано')),
-                        ..._types
-                            .where((t) => t.id != null)
-                            .map((t) => DropdownMenuItem<int?>(value: t.id, child: Text(t.name))),
-                      ],
-                      onChanged: (v) => setStateDialog(() => typeId = v),
-                    ),
-                    const SizedBox(height: 12),
-
-                    DropdownButtonFormField<int?>(
-                      value: buildingId,
-                      decoration: const InputDecoration(labelText: 'Здание'),
-                      isExpanded: true,
-                      items: [
-                        const DropdownMenuItem<int?>(value: null, child: Text('Не выбрано')),
-                        ..._buildings
-                            .where((b) => b.id != null)
-                            .map((b) => DropdownMenuItem<int?>(value: b.id, child: Text(b.name))),
-                      ],
-                      onChanged: (v) => setStateDialog(() => buildingId = v),
-                    ),
-                    const SizedBox(height: 12),
-
-                    DropdownButtonFormField<int?>(
-                      value: respTeacherId,
-                      decoration: const InputDecoration(labelText: 'Ответственный преподаватель'),
-                      isExpanded: true,
-                      items: [
-                        const DropdownMenuItem<int?>(value: null, child: Text('Не выбрано')),
-                        ..._teachers
-                            .where((t) => t.id != null)
-                            .map((t) => DropdownMenuItem<int?>(value: t.id, child: Text(t.fullName))),
-                      ],
-                      onChanged: (v) => setStateDialog(() => respTeacherId = v),
-                    ),
-
-                    const SizedBox(height: 12),
-                    TextFormField(
-                      controller: capacityController,
-                      keyboardType: TextInputType.number,
-                      decoration: InputDecoration(
-                        labelText: 'Вместимость',
-                        filled: true,
-                        fillColor: Colors.grey.shade100,
-                        border: OutlineInputBorder(
-                            borderRadius: BorderRadius.circular(12),
-                            borderSide: BorderSide.none),
-                      ),
-                    ),
-                    const SizedBox(height: 12),
-
-                    TextFormField(
-                      controller: notesController,
-                      decoration: InputDecoration(
-                        labelText: 'Заметки',
-                        filled: true,
-                        fillColor: Colors.grey.shade100,
-                        border: OutlineInputBorder(
-                            borderRadius: BorderRadius.circular(12),
-                            borderSide: BorderSide.none),
-                      ),
-                    ),
-                    const SizedBox(height: 20),
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.end,
-                      children: [
-                        TextButton(
-                          onPressed: () => Navigator.pop(context),
-                          child: const Text('Отменить'),
-                        ),
-                        const SizedBox(width: 12),
-                        ElevatedButton(
-                          onPressed: () async {
-                            final name = nameController.text.trim();
-                            if (name.isEmpty) return; // simple required check
-                            final created = Audience(
-                              name: name,
-                              capacity: int.tryParse(capacityController.text.trim()),
-                              audienceTypeId: typeId,
-                              buildingId: buildingId,
-                              responsibleTeacherId: respTeacherId,
-                              notes: notesController.text.trim().isEmpty
-                                  ? null
-                                  : notesController.text.trim(),
-                            );
-                            await _repo.insertAudience(created);
-                            if (mounted) Navigator.pop(context);
-                          },
-                          style: ElevatedButton.styleFrom(
-                            padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 14),
-                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                          ),
-                          child: const Text('Создать'),
-                        ),
-                      ],
-                    ),
-                  ],
-                ),
-              ),
-            );
-          }),
-        );
-      },
+      builder: (context) => AudienceEditorDialog(
+        lessonTypes: _lessonTypes,
+        teachers: _teachers,
+        buildings: _buildings,
+        audienceTypes: _audienceTypes,
+      ),
     );
-    await _init();
+
+    if (result != null) {
+      await _audiencesRepo.insertAudience(result);
+      await _loadData();
+    }
   }
 
   Future<void> _showEditAudienceDialog(Audience audience) async {
-    final nameController = TextEditingController(text: audience.name);
-    final capacityController = TextEditingController(text: (audience.capacity ?? '').toString());
-    final notesController = TextEditingController(text: audience.notes ?? '');
-    int? typeId = audience.audienceTypeId;
-    int? buildingId = audience.buildingId;
-    int? respTeacherId = audience.responsibleTeacherId;
-
-    // types selection UI removed for now; will be added later if needed
-
-    await showDialog(
+    final result = await showDialog<Audience>(
       context: context,
-      builder: (context) {
-        return Dialog(
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-          insetPadding: const EdgeInsets.all(20),
-          child: StatefulBuilder(builder: (context, setStateDialog) {
-            return Container(
-              width: 500,
-              padding: const EdgeInsets.all(24),
-              decoration: BoxDecoration(
-                color: Colors.white,
-                borderRadius: BorderRadius.circular(20),
-                boxShadow: [
-                  BoxShadow(
-                    color: Colors.black.withAlpha(26),
-                    blurRadius: 20,
-                    offset: const Offset(0, 5),
-                  ),
-                ],
-              ),
-              child: SingleChildScrollView(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    const Text('Redaktirovanie auditorii', style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold)),
-                    const SizedBox(height: 20),
-
-                    TextFormField(
-                      controller: nameController,
-                      decoration: InputDecoration(
-                        labelText: 'Nazvanie',
-                        filled: true,
-                        fillColor: Colors.grey.shade100,
-                        border: OutlineInputBorder(
-                            borderRadius: BorderRadius.circular(12),
-                            borderSide: BorderSide.none),
-                      ),
-                    ),
-                    const SizedBox(height: 12),
-                    DropdownButtonFormField<int?>( value: typeId, decoration: const InputDecoration(labelText: 'Tip auditorii'),
-                      isExpanded: true,
-                      items: [
-                        const  DropdownMenuItem<int?>(value: null, child: Text('Ne vybrano')),
-                        ..._types.where((t) => t.id != null).map((t) => DropdownMenuItem<int?>(value: t.id, child: Text(t.name))),
-                      ],
-                      onChanged: (v) => setStateDialog(() => typeId = v),
-                    ),
-                    const SizedBox(height: 12),
-                    DropdownButtonFormField<int?>( value: typeId, decoration: const InputDecoration(labelText: 'Tip auditorii'),
-                      isExpanded: true,
-                      items: [
-                        const DropdownMenuItem<int?>(value: null, child: Text('Ne vybrano')),
-                        ..._buildings.where((b) => b.id != null).map((b) => DropdownMenuItem<int?>(value: b.id, child: Text(b.name))),
-                      ],
-                      onChanged: (v) => setStateDialog(() => buildingId = v),
-                    ),
-                    const SizedBox(height: 12),
-                    DropdownButtonFormField<int?>( value: typeId, decoration: const InputDecoration(labelText: 'Tip auditorii'),
-                      isExpanded: true,
-                      items: [
-                        const DropdownMenuItem<int?>(value: null, child: Text('Ne vybrano')),
-                        ..._teachers.where((t) => t.id != null).map((t) => DropdownMenuItem<int?>(value: t.id, child: Text(t.fullName))),
-                      ],
-                      onChanged: (v) => setStateDialog(() => respTeacherId = v),
-                    ),
-
-                    TextFormField(
-                      controller: capacityController,
-                      keyboardType: TextInputType.number,
-                      decoration: InputDecoration(
-                        labelText: 'Nazvanie',
-                        filled: true,
-                        fillColor: Colors.grey.shade100,
-                        border: OutlineInputBorder(
-                            borderRadius: BorderRadius.circular(12),
-                            borderSide: BorderSide.none),
-                      ),
-                    ),
-                    const SizedBox(height: 12),
-
-                    TextFormField(
-                      controller: notesController,
-                      decoration: InputDecoration(
-                        labelText: 'Zametki',
-                        filled: true,
-                        fillColor: Colors.grey.shade100,
-                        border: OutlineInputBorder(
-                            borderRadius: BorderRadius.circular(12),
-                            borderSide: BorderSide.none),
-                      ),
-                    ),
-                    const SizedBox(height: 20),
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.end,
-                      children: [
-                        TextButton(
-                          onPressed: () => Navigator.pop(context),
-                          child: const Text('Otmenit\''),
-                        ),
-                        const SizedBox(width: 12),
-                        ElevatedButton(
-                          onPressed: () async {
-                            setState(() {
-                              final updated = Audience(
-                                id: audience.id,
-                                name: nameController.text.trim(),
-                                capacity: int.tryParse(capacityController.text.trim()),
-                                audienceTypeId: typeId,
-                                buildingId: buildingId,
-                                responsibleTeacherId: respTeacherId,
-                                notes: notesController.text.trim().isEmpty ? null : notesController.text.trim(),
-                              );
-                              _repo.updateAudience(updated);
-                            });
-                            Navigator.pop(context);
-                          },
-                          style: ElevatedButton.styleFrom(
-                              padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 14),
-                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12))),
-                          child: const Text('Sohranit\''),
-                        )
-                      ],
-                    )
-                  ],
-                ),
-              ),
-            );
-          }),
-        );
-      },
+      builder: (context) => AudienceEditorDialog(
+        initialAudience: audience,
+        lessonTypes: _lessonTypes,
+        teachers: _teachers,
+        buildings: _buildings,
+        audienceTypes: _audienceTypes,
+      ),
     );
-    await _init();
+
+    if (result != null) {
+      await _audiencesRepo.updateAudience(result);
+      await _loadData();
+    }
   }
 
   Future<void> _deleteAudience(Audience audience) async {
     if (audience.id == null) return;
-    final ok = await showDialog<bool>(
+    final confirmed = await showDialog<bool>(
       context: context,
-      builder: (c) => AlertDialog(title: const Text("РЈРґР°Р»РёС‚СЊ Р°СѓРґРёС‚РѕСЂРёСЋ?"), content: Text("Р’С‹ СѓРІРµСЂРµРЅС‹, С‡С‚Рѕ С…РѕС‚РёС‚Рµ СѓРґР°Р»РёС‚СЊ \"${audience.name}\"?"), actions: [TextButton(onPressed: () => Navigator.pop(c, false), child: const Text("РћС‚РјРµРЅР°")), TextButton(onPressed: () => Navigator.pop(c, true), child: const Text("РЈРґР°Р»РёС‚СЊ"))]),    );
-    if (ok == true) {
-      await _repo.deleteAudience(audience.id!);
-      await _init();
+      builder: (context) => AlertDialog(
+        title: const Text('Удалить аудиторию?'),
+        content: Text('Вы уверены, что хотите удалить «${audience.name}»?'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(false),
+            child: const Text('Отмена'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(true),
+            child: const Text('Удалить'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed == true) {
+      await _audiencesRepo.deleteAudience(audience.id!);
+      await _loadData();
     }
   }
 
@@ -399,8 +236,7 @@ class _AudiencesPageState extends State<AudiencesScreen> {
       body: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          SidebarMenu(selected: 'пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ'),
-
+          const SidebarMenu(selected: 'Аудитории'),
           Expanded(
             flex: 2,
             child: Padding(
@@ -408,60 +244,83 @@ class _AudiencesPageState extends State<AudiencesScreen> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  const Text('пїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ', style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold)),
+                  const Text(
+                    'Аудитории',
+                    style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold),
+                  ),
                   const SizedBox(height: 24),
-
                   AudienceFilterBar(
                     onFilterChanged: _onFilterChanged,
                     onSortChanged: _onSortChanged,
                     onViewChanged: _onViewChanged,
-                    isGridView: isGridView,
+                    isGridView: _isGridView,
                     onAddPressed: _showCreateAudienceDialog,
                   ),
                   const SizedBox(height: 24),
-
                   Expanded(
-                    child: filteredItems.isEmpty ? const Center(child: Text("РќРµС‚ Р°СѓРґРёС‚РѕСЂРёР№")) : isGridView
-                        ? GridView.builder(
-                            padding: EdgeInsets.zero,
-                            gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                              crossAxisCount: 2,
-                              mainAxisSpacing: 16,
-                              crossAxisSpacing: 16,
-                              childAspectRatio: 1.7,
-                            ),
-                            itemCount: filteredItems.length,
-                            itemBuilder: (context, index) {
-                              final item = filteredItems[index];
-                              return AudienceCard(
-                                audience: item,
-                                onTap: () => _showEditAudienceDialog(item),
-                                onEdit: () => _showEditAudienceDialog(item),
-                                onDelete: () => _deleteAudience(item),
-                              );
-                            },
-                          )
-                        : ListView.builder(
-                            itemCount: filteredItems.length,
-                            itemBuilder: (context, index) {
-                              final item = filteredItems[index];
-                              return Padding(
-                                padding: const EdgeInsets.only(bottom: 12.0),
-                                child: AudienceCard(
-                                  audience: item,
-                                  onTap: () => _showEditAudienceDialog(item),
-                                  onEdit: () => _showEditAudienceDialog(item),
-                                  onDelete: () => _deleteAudience(item),
-                                ),
-                              );
-                            },
-                          ),
+                    child: _isLoading
+                        ? const Center(child: CircularProgressIndicator())
+                        : _filteredAudiences.isEmpty
+                            ? const Center(child: Text('Аудитории не найдены'))
+                            : _isGridView
+                                ? GridView.builder(
+                                    padding: EdgeInsets.zero,
+                                    gridDelegate:
+                                        const SliverGridDelegateWithFixedCrossAxisCount(
+                                      crossAxisCount: 2,
+                                      mainAxisSpacing: 16,
+                                      crossAxisSpacing: 16,
+                                      childAspectRatio: 1.7,
+                                    ),
+                                    itemCount: _filteredAudiences.length,
+                                    itemBuilder: (context, index) {
+                                      final item = _filteredAudiences[index];
+                                      final lessonNames = item.lessonTypeIds
+                                          .map((id) => _lessonTypeNameById[id])
+                                          .whereType<String>()
+                                          .toList();
+                                      final teacherName = item.teacherId != null
+                                          ? _teacherById[item.teacherId!]?.fullName
+                                          : null;
+
+                                      return AudienceCard(
+                                        audience: item,
+                                        teacherName: teacherName,
+                                        lessonTypeNames: lessonNames,
+                                        onTap: () => _showEditAudienceDialog(item),
+                                        onDelete: () => _deleteAudience(item),
+                                      );
+                                    },
+                                  )
+                                : ListView.builder(
+                                    itemCount: _filteredAudiences.length,
+                                    itemBuilder: (context, index) {
+                                      final item = _filteredAudiences[index];
+                                      final lessonNames = item.lessonTypeIds
+                                          .map((id) => _lessonTypeNameById[id])
+                                          .whereType<String>()
+                                          .toList();
+                                      final teacherName = item.teacherId != null
+                                          ? _teacherById[item.teacherId!]?.fullName
+                                          : null;
+
+                                      return Padding(
+                                        padding: const EdgeInsets.only(bottom: 12),
+                                        child: AudienceCard(
+                                          audience: item,
+                                          teacherName: teacherName,
+                                          lessonTypeNames: lessonNames,
+                                          onTap: () => _showEditAudienceDialog(item),
+                                          onDelete: () => _deleteAudience(item),
+                                        ),
+                                      );
+                                    },
+                                  ),
                   ),
                 ],
               ),
             ),
           ),
-
           Container(
             width: 320,
             color: Colors.white,
@@ -481,12 +340,3 @@ class _AudiencesPageState extends State<AudiencesScreen> {
     );
   }
 }
-
-
-
-
-
-
-
-
-
