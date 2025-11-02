@@ -9,6 +9,8 @@ import '../../../departments/data/department_repository.dart';
 import '../../../departments/data/department_model.dart';
 import '../../../disciplines/data/disciplines_repository.dart';
 import '../../../disciplines/data/discipline_model.dart';
+import '../../../buildings/data/building_model.dart';
+import '../../../buildings/data/building_repository.dart';
 
 class TeachersScreen extends StatefulWidget {
   const TeachersScreen({super.key});
@@ -252,7 +254,10 @@ class _TeacherDialogState extends State<_TeacherDialog> {
   final _phone = TextEditingController();
   final _notes = TextEditingController();
   int? _departmentId;
+  int? _preferredBuildingId;
   final Set<int> _selectedDisciplineIds = {};
+  List<Building> _buildings = [];
+  bool _isLoadingBuildings = true;
 
   @override
   void initState() {
@@ -264,11 +269,23 @@ class _TeacherDialogState extends State<_TeacherDialog> {
       _phone.text = e.phone ?? '';
       _notes.text = e.notes ?? '';
       _departmentId = e.departmentId;
+      _preferredBuildingId = e.preferredBuildingId;
     }
     // Seed initial discipline selection
     _selectedDisciplineIds
       ..clear()
       ..addAll(widget.initialSelectedDisciplineIds);
+    _loadBuildings();
+  }
+
+  Future<void> _loadBuildings() async {
+    final list = await BuildingRepository().getAllBuildings();
+    if (mounted) {
+      setState(() {
+        _buildings = list;
+        _isLoadingBuildings = false;
+      });
+    }
   }
 
   @override
@@ -289,6 +306,7 @@ class _TeacherDialogState extends State<_TeacherDialog> {
       email: _email.text.trim().isEmpty ? null : _email.text.trim(),
       phone: _phone.text.trim().isEmpty ? null : _phone.text.trim(),
       notes: _notes.text.trim().isEmpty ? null : _notes.text.trim(),
+      preferredBuildingId: _preferredBuildingId,
     );
     Navigator.pop(context, _TeacherResult(base, _selectedDisciplineIds.toList()));
   }
@@ -318,6 +336,22 @@ class _TeacherDialogState extends State<_TeacherDialog> {
                 decoration: const InputDecoration(labelText: 'Отдел'),
                 onChanged: (v) => setState(() => _departmentId = v),
               ),
+              const SizedBox(height: 8),
+              _isLoadingBuildings
+                  ? const Padding(
+                      padding: EdgeInsets.symmetric(vertical: 8),
+                      child: CircularProgressIndicator(),
+                    )
+                  : DropdownButtonFormField<int?>(
+                      value: _preferredBuildingId,
+                      isExpanded: true,
+                      items: [
+                        const DropdownMenuItem<int?>(value: null, child: Text('Без приоритетного корпуса')),
+                        ..._buildings.where((b) => b.id != null).map((b) => DropdownMenuItem<int?>(value: b.id, child: Text(b.name))),
+                      ],
+                      decoration: const InputDecoration(labelText: 'Приоритетный корпус'),
+                      onChanged: (v) => setState(() => _preferredBuildingId = v),
+                    ),
               const SizedBox(height: 8),
               TextField(controller: _email, decoration: const InputDecoration(labelText: 'Email')),
               const SizedBox(height: 8),

@@ -21,7 +21,7 @@ class DBHelper {
 
     return openDatabase(
       path,
-      version: 15,
+      version: 16,
       onConfigure: (db) async {
         await db.execute('PRAGMA foreign_keys = ON');
       },
@@ -216,6 +216,14 @@ class DBHelper {
             );
           ''');
         }
+        if (oldVersion < 16) {
+          // Добавляем preferred_building_id, если его еще нет
+          final rows = await db.rawQuery('PRAGMA table_info(teachers)');
+          final existing = rows.map((r) => (r['name'] as String).toLowerCase()).toSet();
+          if (!existing.contains('preferred_building_id')) {
+            await db.execute('ALTER TABLE teachers ADD COLUMN preferred_building_id INTEGER;');
+          }
+        }
 
         await _ensureSchema(db);
       },
@@ -398,7 +406,9 @@ class DBHelper {
         email TEXT,
         phone TEXT,
         notes TEXT,
-        FOREIGN KEY (department_id) REFERENCES departments(id)
+        preferred_building_id INTEGER,
+        FOREIGN KEY (department_id) REFERENCES departments(id),
+        FOREIGN KEY (preferred_building_id) REFERENCES buildings(id)
       );
     ''');
 
@@ -632,6 +642,7 @@ class DBHelper {
     await add('email', 'TEXT');
     await add('phone', 'TEXT');
     await add('notes', 'TEXT');
+    await add('preferred_building_id', 'INTEGER');
   }
 
   Future<void> _ensureDisciplineColumns(Database db) async {

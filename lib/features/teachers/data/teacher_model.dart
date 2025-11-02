@@ -5,6 +5,7 @@ class Teacher {
   final String? email;
   final String? phone;
   final String? notes;
+  final int? preferredBuildingId;
 
   Teacher({
     this.id,
@@ -13,6 +14,7 @@ class Teacher {
     this.email,
     this.phone,
     this.notes,
+    this.preferredBuildingId,
   });
 
   Map<String, dynamic> toMap() => {
@@ -22,6 +24,7 @@ class Teacher {
         'email': email,
         'phone': phone,
         'notes': notes,
+        'preferred_building_id': preferredBuildingId,
       };
 
   factory Teacher.fromMap(Map<String, dynamic> map) => Teacher(
@@ -31,6 +34,7 @@ class Teacher {
         email: _asNullableString(map['email']),
         phone: _asNullableString(map['phone']),
         notes: _asNullableString(map['notes']),
+        preferredBuildingId: map['preferred_building_id'] as int?,
       );
 
   Map<String, dynamic> toSupabaseMap() => {
@@ -40,6 +44,7 @@ class Teacher {
         'email': email,
         'phone': phone,
         'notes': notes,
+        'preferred_building_id': preferredBuildingId,
       };
 }
 
