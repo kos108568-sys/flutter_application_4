@@ -118,7 +118,7 @@ class GroupSubjectTeachersRepository {
       final inserted = await _supabase
           .from(_table)
           .insert(payload)
-          .select('id, group_id, teacher_id, discipline_id');
+          .select('id, group_id, teacher_id, discipline_id, subgroup');
       final list = (inserted as List).cast<Map<String, dynamic>>();
       for (final r in list) {
         final rid = r['id'] as int?;
@@ -127,8 +127,8 @@ class GroupSubjectTeachersRepository {
         await db.update(
           _table,
           {'id': rid},
-          where: 'group_id = ? AND teacher_id = ? AND discipline_id = ?',
-          whereArgs: [r['group_id'], r['teacher_id'], r['discipline_id']],
+          where: 'group_id = ? AND teacher_id = ? AND discipline_id = ? AND ifnull(subgroup, "all") = ifnull(?, "all")',
+          whereArgs: [r['group_id'], r['teacher_id'], r['discipline_id'], r['subgroup']],
         );
       }
     } catch (_) {
@@ -187,6 +187,7 @@ class GroupSubjectTeachersRepository {
               startDate: m.startDate,
               endDate: m.endDate,
               notes: m.notes,
+              subgroup: m.subgroup ?? 'all',
             ))
         .toList();
     await insertManyForGroup(groupId, normalized);

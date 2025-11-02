@@ -22,18 +22,16 @@ class GroupsScreen extends StatefulWidget {
 }
 
 class _GroupsScreenState extends State<GroupsScreen> {
-  final _repo = GroupsRepository();
+  final _groupsRepo = GroupsRepository();
   final _teachersRepo = TeachersRepository();
   final _discRepo = DisciplinesRepository();
   final _gstRepo = GroupSubjectTeachersRepository();
 
-  List<GroupModel> all = [];
-  List<GroupModel> filtered = [];
+  List<GroupModel> _all = [];
+  List<GroupModel> _filtered = [];
   List<Teacher> _teachers = [];
   List<Discipline> _disciplines = [];
-  // removed unused _teacherNames map
-  Map<int, List<String>> _discNamesByGroup = {};
-  bool isGrid = true;
+  bool _isGrid = true;
 
   @override
   void initState() {
@@ -42,20 +40,18 @@ class _GroupsScreenState extends State<GroupsScreen> {
   }
 
   Future<void> _init() async {
-    await _repo.seedIfEmpty();
-    try { await _repo.syncGroups(); } catch (_) {}
-    final items = await _repo.getAllGroups(orderBy: 'name ASC');
+    try { await _groupsRepo.syncGroups(); } catch (_) {}
+    try { await _teachersRepo.syncTeachers(); } catch (_) {}
+    try { await _discRepo.syncDisciplines(); } catch (_) {}
+    final groups = await _groupsRepo.getAllGroups(orderBy: 'name ASC');
     final teachers = await _teachersRepo.getAllTeachers(orderBy: 'full_name ASC');
     final discs = await _discRepo.getAllDisciplines(orderBy: 'name ASC');
-    final gidList = items.where((g) => g.id != null).map((g) => g.id!).toList();
-    final discNamesMap = await _discRepo.disciplineNamesByGroup(gidList);
     if (!mounted) return;
     setState(() {
-      all = items;
-      filtered = List.of(items);
+      _all = groups;
+      _filtered = List.of(groups);
       _teachers = teachers.where((t) => t.id != null).toList();
       _disciplines = discs;
-      _discNamesByGroup = discNamesMap;
     });
   }
 
@@ -66,12 +62,12 @@ class _GroupsScreenState extends State<GroupsScreen> {
 
   void _onFilterChanged(String q) {
     setState(() {
-      filtered = all
-          .where((e) =>
-              e.name.toLowerCase().contains(q.toLowerCase()) ||
-              (e.curator ?? '').toLowerCase().contains(q.toLowerCase()) ||
-              (e.specialty ?? '').toLowerCase().contains(q.toLowerCase()))
-          .toList();
+      final query = q.toLowerCase();
+      _filtered = _all.where((g) {
+        final curator = (g.curator ?? '').toLowerCase();
+        final spec = (g.specialty ?? '').toLowerCase();
+        return g.name.toLowerCase().contains(query) || curator.contains(query) || spec.contains(query);
+      }).toList();
     });
   }
 
@@ -79,57 +75,43 @@ class _GroupsScreenState extends State<GroupsScreen> {
     setState(() {
       switch (by) {
         case 'size':
-          filtered.sort((a, b) => (a.size ?? 0).compareTo(b.size ?? 0));
+          _filtered.sort((a, b) => (a.size ?? 0).compareTo(b.size ?? 0));
           break;
         case 'course':
-          filtered.sort((a, b) => (a.course ?? 0).compareTo(b.course ?? 0));
+          _filtered.sort((a, b) => (a.course ?? 0).compareTo(b.course ?? 0));
           break;
         case 'name':
         default:
-          filtered.sort((a, b) => a.name.compareTo(b.name));
+          _filtered.sort((a, b) => a.name.compareTo(b.name));
       }
     });
   }
 
-  void _onViewChanged(bool grid) => setState(() => isGrid = grid);
+  void _onViewChanged(bool grid) => setState(() => _isGrid = grid);
 
-  int? _teacherIdByName(String? name) {
-    if (name == null) return null;
-    try {
-      return _teachers.firstWhere((t) => t.fullName == name).id;
-    } catch (_) {
-      return null;
+  String? _disciplinesLineFor(GroupModel g) {
+    if (g.disciplineIds.isEmpty) return null;
+    final names = <String>[];
+    for (final id in g.disciplineIds) {
+      final d = _disciplines.firstWhere(
+        (e) => e.id == id,
+        orElse: () => Discipline(name: ''),
+      );
+      if (d.name.isNotEmpty) names.add(d.name);
     }
+    return names.isEmpty ? null : names.join(', ');
   }
 
   Future<void> _editGroup(GroupModel g) async {
-    final name = TextEditingController(text: g.name);
-    final size = TextEditingController(text: (g.size ?? '').toString());
-    final course = TextEditingController(text: (g.course ?? '').toString());
-    final specialty = TextEditingController(text: g.specialty ?? '');
-    int? curatorId = g.curatorTeacherId ?? _teacherIdByName(g.curator);
-    final selectedDisc = {...g.disciplineIds};
+    final nameCtrl = TextEditingController(text: g.name);
+    final sizeCtrl = TextEditingController(text: (g.size ?? '').toString());
+    final courseCtrl = TextEditingController(text: (g.course ?? '').toString());
+    final specialtyCtrl = TextEditingController(text: g.specialty ?? '');
+    int? curatorId = g.curatorTeacherId;
+
     final assignments = <GroupSubjectTeacher>[];
     if (g.id != null) {
-      try {
-        final current = await _gstRepo.getByGroup(g.id!);
-        assignments.addAll(current);
-      } catch (_) {}
-    }
-
-    Future<bool> confirmDelete() async {
-      final ok = await showDialog<bool>(
-        context: context,
-        builder: (ctx) => AlertDialog(
-          title: const Text('Delete group?'),
-          content: Text('Are you sure you want to delete "${g.name}"?'),
-          actions: [
-            TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
-            TextButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('Delete')),
-          ],
-        ),
-      );
-      return ok ?? false;
+      try { assignments.addAll(await _gstRepo.getByGroup(g.id!)); } catch (_) {}
     }
 
     await showDialog(
@@ -139,414 +121,237 @@ class _GroupsScreenState extends State<GroupsScreen> {
         child: Padding(
           padding: const EdgeInsets.all(16),
           child: StatefulBuilder(
-            builder: (context, setStateDialog) {
-              return SingleChildScrollView(
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                  const Text('Edit group', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+            builder: (context, setDialog) => SingleChildScrollView(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const Text('Редактировать группу', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
                   const SizedBox(height: 12),
                   Row(children: [
-                    Expanded(child: TextField(controller: name, decoration: const InputDecoration(labelText: 'Name'))),
+                    Expanded(child: TextField(controller: nameCtrl, decoration: const InputDecoration(labelText: 'Название'))),
                     const SizedBox(width: 12),
-                    Expanded(child: TextField(controller: specialty, decoration: const InputDecoration(labelText: 'Specialty'))),
+                    Expanded(child: TextField(controller: specialtyCtrl, decoration: const InputDecoration(labelText: 'Специальность'))),
                   ]),
-                  const SizedBox(height: 12),
                   const SizedBox(height: 12),
                   Row(children: [
                     Expanded(
-                      child: DropdownButtonFormField<int?>(
-                        initialValue: curatorId,
-                        decoration: const InputDecoration(labelText: 'Curator (teacher)'),
+                      child: DropdownButtonFormField<int?>
+                        (initialValue: curatorId,
+                        decoration: const InputDecoration(labelText: 'Куратор (преподаватель)') ,
                         items: [
-                          const DropdownMenuItem<int?>(value: null, child: Text('Not assigned')),
-                          ..._teachers.map(
-                            (t) => DropdownMenuItem<int?>(value: t.id, child: Text(t.fullName)),
-                          ),
+                          const DropdownMenuItem<int?>(value: null, child: Text('Не назначен')),
+                          ..._teachers.map((t) => DropdownMenuItem<int?>(value: t.id, child: Text(t.fullName))).toList(),
                         ],
-                        onChanged: (val) => setStateDialog(() => curatorId = val),
+                        onChanged: (v) => setDialog(() => curatorId = v),
                       ),
                     ),
                     const SizedBox(width: 12),
-                    Expanded(
-                      child: TextField(
-                        controller: size,
-                        decoration: const InputDecoration(labelText: 'Student count'),
-                        keyboardType: TextInputType.number,
-                      ),
-                    ),
+                    Expanded(child: TextField(controller: sizeCtrl, keyboardType: TextInputType.number, decoration: const InputDecoration(labelText: 'Количество студентов'))),
                   ]),
                   const SizedBox(height: 12),
                   Row(children: [
-                    Expanded(
-                      child: TextField(
-                        controller: course,
-                        decoration: const InputDecoration(labelText: 'Course'),
-                        keyboardType: TextInputType.number,
-                      ),
-                    ),
+                    Expanded(child: TextField(controller: courseCtrl, keyboardType: TextInputType.number, decoration: const InputDecoration(labelText: 'Курс'))),
                     const Expanded(child: SizedBox()),
                   ]),
                   const SizedBox(height: 16),
-                  // Assignments section
                   Row(
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
-                      const Text('Assignments (teacher, subject, hours, dates)'),
+                      const Text('Назначения (предмет, преподаватель, часы, период, подгруппа)'),
                       TextButton.icon(
                         onPressed: () async {
-                          final newItem = await _showAddAssignmentDialogForEdit(g.id);
-                          if (newItem != null) {
-                            setStateDialog(() => assignments.add(newItem));
-                          }
+                          if (g.id == null) return;
+                          final item = await _showAssignmentDialog(g.id!, null);
+                          if (item != null) setDialog(() => assignments.add(item));
                         },
                         icon: const Icon(Icons.add),
-                        label: const Text('Add'),
+                        label: const Text('Добавить'),
                       ),
                     ],
                   ),
                   const SizedBox(height: 8),
                   ...assignments.asMap().entries.map((e) {
-                    final a = e.value;
-                    final idx = e.key;
-                    final discName = _disciplines.firstWhere(
-                      (d) => d.id == a.disciplineId,
-                      orElse: () => Discipline(name: 'Unknown'),
-                    ).name;
-                    final teacherName = _teachers.firstWhere(
-                      (t) => t.id == a.teacherId,
-                      orElse: () => Teacher(fullName: 'Unknown'),
-                    ).fullName;
+                    final a = e.value; final idx = e.key;
+                    final discName = _disciplines.firstWhere((d) => d.id == a.disciplineId, orElse: () => Discipline(name: 'Неизвестно')).name;
+                    final teacherName = _teachers.firstWhere((t) => t.id == a.teacherId, orElse: () => Teacher(fullName: 'Неизвестно')).fullName;
+                    final sg = (a.subgroup == '1') ? '1 подгруппа' : (a.subgroup == '2') ? '2 подгруппа' : 'Вся группа';
                     return Container(
                       margin: const EdgeInsets.only(bottom: 8),
                       padding: const EdgeInsets.all(8),
-                      decoration: BoxDecoration(
-                        color: Colors.grey.shade100,
-                        borderRadius: BorderRadius.circular(6),
-                        border: Border.all(color: Colors.grey.shade300),
-                      ),
-                      child: Row(
-                        children: [
-                          Expanded(child: Text('$discName - $teacherName, ${a.totalHours}h ${a.startDate ?? ''} ${a.endDate ?? ''}')),
-                          IconButton(
-                            tooltip: 'Edit',
-                            icon: const Icon(Icons.edit_outlined),
-                            onPressed: () async {
-                              final updated = await _showEditAssignmentDialogForEdit(g.id, a);
-                              if (updated != null) {
-                                setStateDialog(() => assignments[idx] = updated);
-                              }
-                            },
-                          ),
-                          IconButton(
-                            tooltip: 'Remove',
-                            icon: const Icon(Icons.delete_outline),
-                            onPressed: () => setStateDialog(() => assignments.remove(a)),
-                          ),
-                        ],
-                      ),
+                      decoration: BoxDecoration(color: Colors.grey.shade100, borderRadius: BorderRadius.circular(6), border: Border.all(color: Colors.grey.shade300)),
+                      child: Row(children: [
+                        Expanded(child: Text('$discName — $teacherName, ${a.totalHours} ч, ${a.startDate ?? ''} – ${a.endDate ?? ''}, $sg')),
+                        IconButton(
+                          tooltip: 'Изменить',
+                          icon: const Icon(Icons.edit_outlined),
+                          onPressed: () async {
+                            if (g.id == null) return;
+                            final updated = await _showAssignmentDialog(g.id!, a);
+                            if (updated != null) setDialog(() => assignments[idx] = updated);
+                          },
+                        ),
+                        IconButton(
+                          tooltip: 'Удалить',
+                          icon: const Icon(Icons.delete_outline),
+                          onPressed: () => setDialog(() => assignments.removeAt(idx)),
+                        ),
+                      ]),
                     );
                   }).toList(),
                   const SizedBox(height: 16),
                   Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      OutlinedButton(
-                        style: OutlinedButton.styleFrom(foregroundColor: Colors.red),
-                        onPressed: () async {
-                          if (await confirmDelete()) {
-                            Navigator.pop(ctx);
-                            if (g.id != null) await _repo.deleteGroup(g.id!);
-                            await _init();
-                          }
-                        },
-                        child: const Text('Delete'),
-                      ),
-                      ElevatedButton(
-                        onPressed: () {
-                          g.name = name.text.trim();
-                          g.curatorTeacherId = curatorId;
-                          g.studentCount = int.tryParse(size.text.trim());
-                          g.course = int.tryParse(course.text.trim());
-                          g.specialty = specialty.text.trim().isEmpty ? null : specialty.text.trim();
-                          g.disciplineIds = assignments.map((a) => a.disciplineId).whereType<int>().toSet().toList();
-                          Navigator.pop(ctx);
-                        },
-                        child: const Text('Save'),
-                      )
-                    ],
-                  )
-                ],
-              ),
-              );
-            },
-          ),
-        ),
-      ),
-    );
-    await _repo.updateGroup(g);
-    if (g.id != null) {
-      try {
-        await _gstRepo.replaceForGroup(g.id!, assignments);
-      } catch (_) {}
-    }
-    await _init();
-  }
-
-  Future<GroupSubjectTeacher?> _showAddAssignmentDialogForEdit(int? groupId) async {
-    if (groupId == null) return null;
-    int? disciplineId;
-    int? teacherId;
-    final hoursCtrl = TextEditingController(text: '2');
-    DateTime? start;
-    DateTime? end;
-    List<Teacher> filteredTeachers = _teachers;
-
-    Future<void> onDisciplineChanged(int? id) async {
-      disciplineId = id;
-      teacherId = null;
-      filteredTeachers = _teachers;
-      if (id != null) {
-        try {
-          final byDisc = await _teachersRepo.getTeachersByDiscipline(id);
-          final ids = byDisc.map((t) => t.id).whereType<int>().toSet();
-          filteredTeachers = _teachers.where((t) => t.id != null && ids.contains(t.id)).toList();
-        } catch (_) {}
-      }
-    }
-
-    return showDialog<GroupSubjectTeacher>(
-      context: context,
-      builder: (ctx) {
-        return StatefulBuilder(builder: (ctx, setStateDialog) {
-          return Dialog(
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-            child: Padding(
-              padding: const EdgeInsets.all(16),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  const Text('Add assignment', style: TextStyle(fontWeight: FontWeight.bold)),
-                  const SizedBox(height: 12),
-                  DropdownButtonFormField<int>(
-                    decoration: const InputDecoration(labelText: 'Discipline'),
-                    isExpanded: true,
-                    value: disciplineId,
-                    items: [
-                      for (final d in _disciplines)
-                        if (d.id != null) DropdownMenuItem<int>(value: d.id, child: Text(d.name)),
-                    ],
-                    onChanged: (v) async {
-                      await onDisciplineChanged(v);
-                      setStateDialog(() {});
-                    },
-                  ),
-                  const SizedBox(height: 8),
-                  DropdownButtonFormField<int>(
-                    decoration: const InputDecoration(labelText: 'Teacher'),
-                    isExpanded: true,
-                    value: teacherId,
-                    items: [
-                      for (final t in filteredTeachers)
-                        if (t.id != null) DropdownMenuItem<int>(value: t.id, child: Text(t.fullName)),
-                    ],
-                    onChanged: (v) => setStateDialog(() => teacherId = v),
-                  ),
-                  const SizedBox(height: 8),
-                  TextField(
-                    controller: hoursCtrl,
-                    decoration: const InputDecoration(labelText: 'Hours'),
-                    keyboardType: TextInputType.number,
-                  ),
-                  const SizedBox(height: 8),
-                  Row(children: [
-                    Expanded(
-                      child: OutlinedButton(
-                        onPressed: () async {
-                          final now = DateTime.now();
-                          final v = await showDatePicker(context: context, initialDate: start ?? now, firstDate: DateTime(2020), lastDate: DateTime(2035));
-                          if (v != null) setStateDialog(() => start = v);
-                        },
-                        child: Text(start == null ? 'Start date' : '${start!.day.toString().padLeft(2, '0')}.${start!.month.toString().padLeft(2, '0')}.${start!.year}'),
-                      ),
-                    ),
-                    const SizedBox(width: 8),
-                    Expanded(
-                      child: OutlinedButton(
-                        onPressed: () async {
-                          final now = DateTime.now();
-                          final v = await showDatePicker(context: context, initialDate: end ?? start ?? now, firstDate: DateTime(2020), lastDate: DateTime(2035));
-                          if (v != null) setStateDialog(() => end = v);
-                        },
-                        child: Text(end == null ? 'End date' : '${end!.day.toString().padLeft(2, '0')}.${end!.month.toString().padLeft(2, '0')}.${end!.year}'),
-                      ),
-                    ),
-                  ]),
-                  const SizedBox(height: 12),
-                  Row(
                     mainAxisAlignment: MainAxisAlignment.end,
                     children: [
-                      TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancel')),
+                      TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Отмена')),
                       const SizedBox(width: 8),
                       ElevatedButton(
-                        onPressed: () {
-                          final hours = int.tryParse(hoursCtrl.text.trim()) ?? 0;
-                          if (disciplineId == null || teacherId == null || hours <= 0) return;
-                          String? fmt(DateTime? d) => d == null ? null : '${d.year.toString().padLeft(4, '0')}-${d.month.toString().padLeft(2, '0')}-${d.day.toString().padLeft(2, '0')}';
-                          Navigator.pop(
-                            ctx,
-                            GroupSubjectTeacher(
-                              groupId: groupId,
-                              teacherId: teacherId!,
-                              disciplineId: disciplineId!,
-                              totalHours: hours,
-                              startDate: fmt(start),
-                              endDate: fmt(end),
-                            ),
-                          );
+                        onPressed: () async {
+                          g.name = nameCtrl.text.trim();
+                          g.curatorTeacherId = curatorId;
+                          g.studentCount = int.tryParse(sizeCtrl.text.trim());
+                          g.course = int.tryParse(courseCtrl.text.trim());
+                          g.specialty = specialtyCtrl.text.trim().isEmpty ? null : specialtyCtrl.text.trim();
+                          g.disciplineIds = assignments.map((a) => a.disciplineId).whereType<int>().toSet().toList();
+                          Navigator.pop(ctx);
+                          await _groupsRepo.updateGroup(g);
+                          if (g.id != null) { try { await _gstRepo.replaceForGroup(g.id!, assignments); } catch (_) {} }
+                          await _init();
                         },
-                        child: const Text('Add'),
+                        child: const Text('Сохранить'),
                       ),
                     ],
                   )
                 ],
               ),
             ),
-          );
-        });
-      },
+          ),
+        ),
+      ),
     );
   }
 
-  Future<GroupSubjectTeacher?> _showEditAssignmentDialogForEdit(int? groupId, GroupSubjectTeacher current) async {
-    if (groupId == null) return null;
-    int? disciplineId = current.disciplineId;
-    int? teacherId = current.teacherId;
-    final hoursCtrl = TextEditingController(text: current.totalHours.toString());
-    DateTime? start = current.startDate == null ? null : DateTime.tryParse(current.startDate!);
-    DateTime? end = current.endDate == null ? null : DateTime.tryParse(current.endDate!);
+  Future<GroupSubjectTeacher?> _showAssignmentDialog(int groupId, GroupSubjectTeacher? current) async {
+    int? disciplineId = current?.disciplineId;
+    int? teacherId = current?.teacherId;
+    final hoursCtrl = TextEditingController(text: (current?.totalHours ?? 2).toString());
+    DateTime? start = current?.startDate == null ? null : DateTime.tryParse(current!.startDate!);
+    DateTime? end = current?.endDate == null ? null : DateTime.tryParse(current!.endDate!);
+    String subgroup = current?.subgroup ?? 'all';
     List<Teacher> filteredTeachers = _teachers;
 
-    Future<void> refreshTeachers() async {
+    Future<void> _refreshTeachers() async {
       if (disciplineId != null) {
         try {
           final byDisc = await _teachersRepo.getTeachersByDiscipline(disciplineId!);
           final ids = byDisc.map((t) => t.id).whereType<int>().toSet();
           filteredTeachers = _teachers.where((t) => t.id != null && ids.contains(t.id)).toList();
-        } catch (_) {}
+        } catch (_) { filteredTeachers = _teachers; }
       } else {
         filteredTeachers = _teachers;
       }
     }
-    await refreshTeachers();
+    await _refreshTeachers();
 
     return showDialog<GroupSubjectTeacher>(
       context: context,
-      builder: (ctx) {
-        return StatefulBuilder(builder: (ctx, setStateDialog) {
-          Future<void> onDisciplineChanged(int? v) async {
-            disciplineId = v;
-            teacherId = null;
-            await refreshTeachers();
-            setStateDialog(() {});
-          }
-
-          return Dialog(
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-            child: Padding(
-              padding: const EdgeInsets.all(16),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  const Text('Edit assignment', style: TextStyle(fontWeight: FontWeight.bold)),
-                  const SizedBox(height: 12),
-                  DropdownButtonFormField<int>(
-                    decoration: const InputDecoration(labelText: 'Discipline'),
-                    isExpanded: true,
-                    value: disciplineId,
-                    items: [
-                      for (final d in _disciplines)
-                        if (d.id != null) DropdownMenuItem<int>(value: d.id, child: Text(d.name)),
-                    ],
-                    onChanged: onDisciplineChanged,
-                  ),
-                  const SizedBox(height: 8),
-                  DropdownButtonFormField<int>(
-                    decoration: const InputDecoration(labelText: 'Teacher'),
-                    isExpanded: true,
-                    value: teacherId,
-                    items: [
-                      for (final t in filteredTeachers)
-                        if (t.id != null) DropdownMenuItem<int>(value: t.id, child: Text(t.fullName)),
-                    ],
-                    onChanged: (v) => setStateDialog(() => teacherId = v),
-                  ),
-                  const SizedBox(height: 8),
-                  TextField(
-                    controller: hoursCtrl,
-                    decoration: const InputDecoration(labelText: 'Hours'),
-                    keyboardType: TextInputType.number,
-                  ),
-                  const SizedBox(height: 8),
-                  Row(children: [
-                    Expanded(
-                      child: OutlinedButton(
-                        onPressed: () async {
-                          final now = DateTime.now();
-                          final v = await showDatePicker(context: context, initialDate: start ?? now, firstDate: DateTime(2020), lastDate: DateTime(2035));
-                          if (v != null) setStateDialog(() => start = v);
-                        },
-                        child: Text(start == null ? 'Start date' : '${start!.day.toString().padLeft(2, '0')}.${start!.month.toString().padLeft(2, '0')}.${start!.year}'),
-                      ),
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setDialog) => Dialog(
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+          child: Padding(
+            padding: const EdgeInsets.all(16),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(current == null ? 'Добавить назначение' : 'Изменить назначение', style: const TextStyle(fontWeight: FontWeight.bold)),
+                const SizedBox(height: 12),
+                DropdownButtonFormField<int>(
+                  decoration: const InputDecoration(labelText: 'Дисциплина'),
+                  isExpanded: true,
+                  value: disciplineId,
+                  items: [ for (final d in _disciplines) if (d.id != null) DropdownMenuItem<int>(value: d.id, child: Text(d.name)) ],
+                  onChanged: (v) async { disciplineId = v; teacherId = null; await _refreshTeachers(); setDialog((){}); },
+                ),
+                const SizedBox(height: 8),
+                DropdownButtonFormField<int>(
+                  decoration: const InputDecoration(labelText: 'Преподаватель'),
+                  isExpanded: true,
+                  value: teacherId,
+                  items: [ for (final t in filteredTeachers) if (t.id != null) DropdownMenuItem<int>(value: t.id, child: Text(t.fullName)) ],
+                  onChanged: (v) => setDialog(() => teacherId = v),
+                ),
+                const SizedBox(height: 8),
+                TextField(controller: hoursCtrl, decoration: const InputDecoration(labelText: 'Часы'), keyboardType: TextInputType.number),
+                const SizedBox(height: 8),
+                DropdownButtonFormField<String>(
+                  decoration: const InputDecoration(labelText: 'Подгруппа'),
+                  value: subgroup,
+                  items: const [
+                    DropdownMenuItem(value: 'all', child: Text('Вся группа')),
+                    DropdownMenuItem(value: '1', child: Text('1 подгруппа')),
+                    DropdownMenuItem(value: '2', child: Text('2 подгруппа')),
+                  ],
+                  onChanged: (v) => setDialog(() => subgroup = v ?? 'all'),
+                ),
+                const SizedBox(height: 8),
+                Row(children: [
+                  Expanded(
+                    child: OutlinedButton(
+                      onPressed: () async {
+                        final now = DateTime.now();
+                        final v = await showDatePicker(context: context, initialDate: start ?? now, firstDate: DateTime(2020), lastDate: DateTime(2035));
+                        if (v != null) setDialog(() => start = v);
+                      },
+                      child: Text(start == null ? 'Дата начала' : '${start!.day.toString().padLeft(2, '0')}.${start!.month.toString().padLeft(2, '0')}.${start!.year}'),
                     ),
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: OutlinedButton(
+                      onPressed: () async {
+                        final now = DateTime.now();
+                        final v = await showDatePicker(context: context, initialDate: end ?? start ?? now, firstDate: DateTime(2020), lastDate: DateTime(2035));
+                        if (v != null) setDialog(() => end = v);
+                      },
+                      child: Text(end == null ? 'Дата окончания' : '${end!.day.toString().padLeft(2, '0')}.${end!.month.toString().padLeft(2, '0')}.${end!.year}'),
+                    ),
+                  ),
+                ]),
+                const SizedBox(height: 12),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.end,
+                  children: [
+                    TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Отмена')),
                     const SizedBox(width: 8),
-                    Expanded(
-                      child: OutlinedButton(
-                        onPressed: () async {
-                          final now = DateTime.now();
-                          final v = await showDatePicker(context: context, initialDate: end ?? start ?? now, firstDate: DateTime(2020), lastDate: DateTime(2035));
-                          if (v != null) setStateDialog(() => end = v);
-                        },
-                        child: Text(end == null ? 'End date' : '${end!.day.toString().padLeft(2, '0')}.${end!.month.toString().padLeft(2, '0')}.${end!.year}'),
-                      ),
+                    ElevatedButton(
+                      onPressed: () {
+                        final hours = int.tryParse(hoursCtrl.text.trim()) ?? 0;
+                        if (disciplineId == null || teacherId == null || hours <= 0) return;
+                        String? fmt(DateTime? d) => d == null ? null : '${d.year.toString().padLeft(4, '0')}-${d.month.toString().padLeft(2, '0')}-${d.day.toString().padLeft(2, '0')}';
+                        Navigator.pop(
+                          ctx,
+                          GroupSubjectTeacher(
+                            id: current?.id,
+                            groupId: groupId,
+                            teacherId: teacherId!,
+                            disciplineId: disciplineId!,
+                            totalHours: hours,
+                            startDate: fmt(start),
+                            endDate: fmt(end),
+                            subgroup: subgroup,
+                          ),
+                        );
+                      },
+                      child: Text(current == null ? 'Добавить' : 'Сохранить'),
                     ),
-                  ]),
-                  const SizedBox(height: 12),
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.end,
-                    children: [
-                      TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancel')),
-                      const SizedBox(width: 8),
-                      ElevatedButton(
-                        onPressed: () {
-                          final hours = int.tryParse(hoursCtrl.text.trim()) ?? 0;
-                          if (disciplineId == null || teacherId == null || hours <= 0) return;
-                          String? fmt(DateTime? d) => d == null ? null : '${d.year.toString().padLeft(4, '0')}-${d.month.toString().padLeft(2, '0')}-${d.day.toString().padLeft(2, '0')}';
-                          Navigator.pop(
-                            ctx,
-                            GroupSubjectTeacher(
-                              groupId: groupId,
-                              teacherId: teacherId!,
-                              disciplineId: disciplineId!,
-                              totalHours: hours,
-                              startDate: fmt(start),
-                              endDate: fmt(end),
-                            ),
-                          );
-                        },
-                        child: const Text('Save'),
-                      ),
-                    ],
-                  )
-                ],
-              ),
+                  ],
+                )
+              ],
             ),
-          );
-        });
-      },
+          ),
+        ),
+      ),
     );
   }
 
@@ -565,7 +370,7 @@ class _GroupsScreenState extends State<GroupsScreen> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  const Text('Groups list', style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold)),
+                  const Text('Список групп', style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold)),
                   const SizedBox(height: 16),
                   Row(
                     children: [
@@ -574,7 +379,7 @@ class _GroupsScreenState extends State<GroupsScreen> {
                           onFilterChanged: _onFilterChanged,
                           onSortChanged: _onSortChanged,
                           onViewChanged: _onViewChanged,
-                          isGridView: isGrid,
+                          isGridView: _isGrid,
                         ),
                       ),
                       const SizedBox(width: 12),
@@ -587,7 +392,7 @@ class _GroupsScreenState extends State<GroupsScreen> {
                   ),
                   const SizedBox(height: 16),
                   Expanded(
-                    child: isGrid
+                    child: _isGrid
                         ? GridView.builder(
                             padding: EdgeInsets.zero,
                             gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
@@ -596,11 +401,10 @@ class _GroupsScreenState extends State<GroupsScreen> {
                               crossAxisSpacing: 16,
                               childAspectRatio: 2.5,
                             ),
-                            itemCount: filtered.length,
+                            itemCount: _filtered.length,
                             itemBuilder: (context, i) {
-                              final item = filtered[i];
-                              final names = (item.id != null) ? (_discNamesByGroup[item.id!] ?? const <String>[]) : const <String>[];
-                              final line = names.isEmpty ? null : names.join(', ');
+                              final item = _filtered[i];
+                              final line = _disciplinesLineFor(item);
                               return GroupCard(
                                 group: item,
                                 disciplinesLine: line,
@@ -609,12 +413,11 @@ class _GroupsScreenState extends State<GroupsScreen> {
                             },
                           )
                         : ListView.separated(
-                            itemCount: filtered.length,
+                            itemCount: _filtered.length,
                             separatorBuilder: (_, __) => const SizedBox(height: 12),
                             itemBuilder: (context, i) {
-                              final item = filtered[i];
-                              final names = (item.id != null) ? (_discNamesByGroup[item.id!] ?? const <String>[]) : const <String>[];
-                              final line = names.isEmpty ? null : names.join(', ');
+                              final item = _filtered[i];
+                              final line = _disciplinesLineFor(item);
                               return GroupCard(
                                 group: item,
                                 disciplinesLine: line,
@@ -632,119 +435,11 @@ class _GroupsScreenState extends State<GroupsScreen> {
             child: Padding(
               padding: const EdgeInsets.all(24),
               child: const SingleChildScrollView(
-                child: Column(
-                  children: [
-                    RecentGroupsWidget(),
-                  ],
-                ),
+                child: Column(children: [RecentGroupsWidget()]),
               ),
             ),
           )
         ],
-      ),
-    );
-  }
-}
-
-class _SelectableItem {
-  final int id;
-  final String name;
-  _SelectableItem(this.id, this.name);
-}
-
-class _SelectItemsDialog extends StatefulWidget {
-  final String title;
-  final String hint;
-  final List<_SelectableItem> items;
-  final Set<int> initiallySelected;
-
-  const _SelectItemsDialog({
-    required this.title,
-    required this.hint,
-    required this.items,
-    required this.initiallySelected,
-  });
-
-  @override
-  State<_SelectItemsDialog> createState() => _SelectItemsDialogState();
-}
-
-class _SelectItemsDialogState extends State<_SelectItemsDialog> {
-  final _searchCtrl = TextEditingController();
-  String _q = '';
-  late Set<int> _selected;
-
-  @override
-  void initState() {
-    super.initState();
-    _selected = {...widget.initiallySelected};
-  }
-
-  @override
-  void dispose() {
-    _searchCtrl.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final list = widget.items
-        .where((it) => it.name.toLowerCase().contains(_q.toLowerCase()))
-        .toList();
-    return Dialog(
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: SizedBox(
-          width: 420,
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(widget.title, style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
-              const SizedBox(height: 12),
-              TextField(
-                controller: _searchCtrl,
-                decoration: InputDecoration(prefixIcon: const Icon(Icons.search), hintText: widget.hint),
-                onChanged: (v) => setState(() => _q = v.trim()),
-              ),
-              const SizedBox(height: 8),
-              SizedBox(
-                height: 320,
-                child: ListView.builder(
-                  itemCount: list.length,
-                  itemBuilder: (ctx, i) {
-                    final it = list[i];
-                    final sel = _selected.contains(it.id);
-                    return CheckboxListTile(
-                      value: sel,
-                      title: Text(it.name),
-                      controlAffinity: ListTileControlAffinity.leading,
-                      onChanged: (val) {
-                        setState(() {
-                          if (val == true) {
-                            _selected.add(it.id);
-                          } else {
-                            _selected.remove(it.id);
-                          }
-                        });
-                      },
-                    );
-                  },
-                ),
-              ),
-              const SizedBox(height: 12),
-              Row(
-                mainAxisAlignment: MainAxisAlignment.end,
-                children: [
-                  TextButton(onPressed: () => Navigator.pop(context), child: const Text('Cancel')),
-                  const SizedBox(width: 12),
-                  ElevatedButton(onPressed: () => Navigator.pop(context, _selected), child: const Text('Done')),
-                ],
-              )
-            ],
-          ),
-        ),
       ),
     );
   }

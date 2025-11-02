@@ -7,6 +7,7 @@ class GroupSubjectTeacher {
   final String? startDate;
   final String? endDate;
   final String? notes;
+  final String? subgroup; // 'all', '1', '2'
 
   GroupSubjectTeacher({
     this.id,
@@ -17,6 +18,7 @@ class GroupSubjectTeacher {
     this.startDate,
     this.endDate,
     this.notes,
+    this.subgroup,
   });
 
   Map<String, dynamic> toMap() => {
@@ -26,9 +28,10 @@ class GroupSubjectTeacher {
         'discipline_id': disciplineId,
         'total_hours': totalHours,
         'start_date': startDate,
-        'end_date': endDate,
-        'notes': notes,
-      };
+      'end_date': endDate,
+      'notes': notes,
+      if (subgroup != null) 'subgroup': subgroup,
+    };
 
   factory GroupSubjectTeacher.fromMap(Map<String, dynamic> map) => GroupSubjectTeacher(
         id: map['id'] as int?,
@@ -39,6 +42,7 @@ class GroupSubjectTeacher {
         startDate: map['start_date'] as String?,
         endDate: map['end_date'] as String?,
         notes: map['notes'] as String?,
+        subgroup: map['subgroup'] as String?,
       );
 }
 

@@ -19,7 +19,7 @@ class DBHelper {
     final path = p.join(dbPath, 'app_data.db');
     return await openDatabase(
       path,
-      version: 14, // Увеличиваем версию для добавления group_subject_teachers и других изменений
+      version: 14, // ����������� ������ ��� ���������� group_subject_teachers � ������ ���������
       onOpen: (db) async {
         await _ensureSchema(db);
       },
@@ -74,7 +74,7 @@ class DBHelper {
           ''');
         }
         if (oldVersion < 5) {
-          // Добавляем таблицу departments
+          // ��������� ������� departments
           await db.execute('''
             CREATE TABLE IF NOT EXISTS departments (
               id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -87,7 +87,7 @@ class DBHelper {
           ''');
         }
         if (oldVersion < 6) {
-          // Добавляем таблицу audience_types
+          // ��������� ������� audience_types
           await db.execute('''
             CREATE TABLE IF NOT EXISTS audience_types (
               id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -101,7 +101,7 @@ class DBHelper {
           ''');
         }
         if (oldVersion < 7) {
-          // Добавляем таблицу lesson_types
+          // ��������� ������� lesson_types
           await db.execute('''
             CREATE TABLE IF NOT EXISTS lesson_types (
               id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -115,7 +115,7 @@ class DBHelper {
           ''');
         }
         if (oldVersion < 8) {
-          // Добавляем таблицу lesson_rules
+          // ��������� ������� lesson_rules
           await db.execute('''
             CREATE TABLE IF NOT EXISTS lesson_rules (
               id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -128,7 +128,7 @@ class DBHelper {
           ''');
         }
         if (oldVersion < 9) {
-          // Добавляем таблицу equipments
+          // ��������� ������� equipments
           await db.execute('''
             CREATE TABLE IF NOT EXISTS equipments (
               id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -138,7 +138,7 @@ class DBHelper {
           ''');
         }
         if (oldVersion < 10) {
-          // Добавляем таблицу buildings
+          // ��������� ������� buildings
           await db.execute('''
             CREATE TABLE IF NOT EXISTS buildings (
               id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -149,7 +149,7 @@ class DBHelper {
           ''');
         }
         if (oldVersion < 11) {
-          // Добавляем таблицу time_slots
+          // ��������� ������� time_slots
           await db.execute('''
             CREATE TABLE IF NOT EXISTS time_slots (
               id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -161,7 +161,7 @@ class DBHelper {
           ''');
         }
         if (oldVersion < 12) {
-          // Обновляем структуру teachers: добавляем недостающие поля
+          // ��������� ��������� teachers: ��������� ����������� ����
           final rows = await db.rawQuery('PRAGMA table_info(teachers)');
           final existing = rows.map((r) => (r['name'] as String).toLowerCase()).toSet();
           Future<void> add(String name, String ddl) async {
@@ -173,10 +173,10 @@ class DBHelper {
           await add('email', 'TEXT');
           await add('phone', 'TEXT');
           await add('notes', 'TEXT');
-          // Примечание: поля curator_group_id и total_load больше не используются
+          // ����������: ���� curator_group_id � total_load ������ �� ������������
         }
         if (oldVersion < 13) {
-          // Добавляем таблицу audience_equipments (M<->N аудитории-оборудование)
+          // ��������� ������� audience_equipments (M<->N ���������-������������)
           await db.execute('''
             CREATE TABLE IF NOT EXISTS audience_equipments (
               id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -189,7 +189,7 @@ class DBHelper {
           ''');
         }
         if (oldVersion < 14) {
-          // Добавляем таблицу group_subject_teachers (связь группа-дисциплина-преподаватель)
+          // ��������� ������� group_subject_teachers (����� ������-����������-�������������)
           await db.execute('''
             CREATE TABLE IF NOT EXISTS group_subject_teachers (
               id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -199,7 +199,8 @@ class DBHelper {
               total_hours INTEGER NOT NULL,
               start_date TEXT,
               end_date TEXT,
-              notes TEXT,
+              notes TEXT,\r
+              subgroup TEXT,\r
               FOREIGN KEY (group_id) REFERENCES groups(id),
               FOREIGN KEY (teacher_id) REFERENCES teachers(id),
               FOREIGN KEY (discipline_id) REFERENCES disciplines(id),
@@ -221,8 +222,9 @@ class DBHelper {
         audience_type_id INTEGER,
         building_id INTEGER,
         responsible_teacher_id INTEGER,
-        notes TEXT,
-        FOREIGN KEY (audience_type_id) REFERENCES audience_types(id),
+        notes TEXT,\r
+              subgroup TEXT,\r
+              FOREIGN KEY (audience_type_id) REFERENCES audience_types(id),
         FOREIGN KEY (building_id) REFERENCES buildings(id),
         FOREIGN KEY (responsible_teacher_id) REFERENCES teachers(id)
       );
@@ -268,8 +270,9 @@ class DBHelper {
         curator_teacher_id INTEGER,
         student_count INTEGER,
         department_id INTEGER,
-        notes TEXT,
-        FOREIGN KEY (curator_teacher_id) REFERENCES teachers(id),
+        notes TEXT,\r
+              subgroup TEXT,\r
+              FOREIGN KEY (curator_teacher_id) REFERENCES teachers(id),
         FOREIGN KEY (department_id) REFERENCES departments(id)
       );
     ''');
@@ -280,8 +283,9 @@ class DBHelper {
         department_id INTEGER,
         email TEXT,
         phone TEXT,
-        notes TEXT,
-        FOREIGN KEY (department_id) REFERENCES departments(id)
+        notes TEXT,\r
+              subgroup TEXT,\r
+              FOREIGN KEY (department_id) REFERENCES departments(id)
       );
     ''');
     await db.execute('''
@@ -311,7 +315,7 @@ class DBHelper {
       );
     ''');
 
-    // Добавляем таблицу departments
+    // ��������� ������� departments
     await db.execute('''
       CREATE TABLE IF NOT EXISTS departments (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -323,7 +327,7 @@ class DBHelper {
       );
     ''');
 
-    // Добавляем таблицу audience_types
+    // ��������� ������� audience_types
     await db.execute('''
       CREATE TABLE IF NOT EXISTS audience_types (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -336,7 +340,7 @@ class DBHelper {
       );
     ''');
 
-    // Добавляем таблицу lesson_types
+    // ��������� ������� lesson_types
     await db.execute('''
       CREATE TABLE IF NOT EXISTS lesson_types (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -349,7 +353,7 @@ class DBHelper {
       );
     ''');
 
-    // Таблица lesson_rules
+    // ������� lesson_rules
     await db.execute('''
       CREATE TABLE IF NOT EXISTS lesson_rules (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -361,7 +365,7 @@ class DBHelper {
       );
     ''');
 
-    // Таблица equipments
+    // ������� equipments
     await db.execute('''
       CREATE TABLE IF NOT EXISTS equipments (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -370,7 +374,7 @@ class DBHelper {
       );
     ''');
 
-    // Таблица buildings
+    // ������� buildings
     await db.execute('''
       CREATE TABLE IF NOT EXISTS buildings (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -380,7 +384,7 @@ class DBHelper {
       );
     ''');
 
-    // Таблица time_slots
+    // ������� time_slots
     await db.execute('''
       CREATE TABLE IF NOT EXISTS time_slots (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -391,7 +395,7 @@ class DBHelper {
       );
     ''');
 
-    // Таблица audience_equipments (связь аудитории - оборудование)
+    // ������� audience_equipments (����� ��������� - ������������)
     await db.execute('''
       CREATE TABLE IF NOT EXISTS audience_equipments (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -403,7 +407,7 @@ class DBHelper {
       );
     ''');
 
-    // Таблица group_subject_teachers (связь группа-дисциплина-преподаватель)
+    // ������� group_subject_teachers (����� ������-����������-�������������)
     await db.execute('''
       CREATE TABLE IF NOT EXISTS group_subject_teachers (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -413,8 +417,9 @@ class DBHelper {
         total_hours INTEGER NOT NULL,
         start_date TEXT,
         end_date TEXT,
-        notes TEXT,
-        FOREIGN KEY (group_id) REFERENCES groups(id),
+        notes TEXT,\r
+              subgroup TEXT,\r
+              FOREIGN KEY (group_id) REFERENCES groups(id),
         FOREIGN KEY (teacher_id) REFERENCES teachers(id),
         FOREIGN KEY (discipline_id) REFERENCES disciplines(id),
         UNIQUE (group_id, teacher_id, discipline_id)
@@ -425,12 +430,13 @@ class DBHelper {
     await _ensureTeacherColumns(db);
     await _ensureDisciplineColumns(db);
     await _ensureAudienceColumns(db);
-    await _ensureSyncColumns(db);
+    await _ensureSyncColumns(db);    
+    await _ensureGSTColumns(db);
   }
 
   Future<void> _ensureSyncColumns(Database db) async {
     // Ensure common sync columns exist in tables we will sync
-    final tables = ['audiences', 'groups', 'teachers', 'disciplines', 'departments', 'audience_types', 'lesson_types', 'lessons']; // Добавляем lesson_types
+    final tables = ['audiences', 'groups', 'teachers', 'disciplines', 'departments', 'audience_types', 'lesson_types', 'lessons']; // ��������� lesson_types
     for (final t in tables) {
       final rows = await db.rawQuery('PRAGMA table_info($t)');
       final existing = rows.map((row) => (row['name'] as String).toLowerCase()).toSet();
@@ -509,4 +515,11 @@ class DBHelper {
     await add('lesson_type_id', 'INTEGER');
     await add('semester', 'TEXT');
   }
-}
+
+  Future<void> _ensureGSTColumns(Database db) async {
+    final rows = await db.rawQuery('PRAGMA table_info(group_subject_teachers)');
+    final existing = rows.map((row) => (row['name'] as String).toLowerCase()).toSet();
+    if (!existing.contains('subgroup')) {
+      await db.execute('ALTER TABLE group_subject_teachers ADD COLUMN subgroup TEXT;');
+    }
+  }}

@@ -9,7 +9,8 @@ CREATE TABLE IF NOT EXISTS public.group_subject_teachers (
   start_date DATE,
   end_date DATE,
   notes TEXT,
-  UNIQUE (group_id, teacher_id, discipline_id)
+  subgroup TEXT DEFAULT 'all',
+  UNIQUE (group_id, teacher_id, discipline_id, subgroup)
 );
 
 CREATE INDEX IF NOT EXISTS idx_gst_group ON public.group_subject_teachers(group_id);

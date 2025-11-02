@@ -15,7 +15,12 @@ class LessonsRepository {
 
   Future<int> insert(LessonModel lesson) async {
     final db = await _db;
-    return await db.insert('lessons', lesson.toMap()..remove('id'));
+    // Avoid crashes on accidental duplicates (unique index on group_id, date, pair_no, subgroup)
+    return await db.insert(
+      'lessons',
+      lesson.toMap()..remove('id'),
+      conflictAlgorithm: ConflictAlgorithm.ignore,
+    );
   }
 
   Future<int> update(LessonModel lesson) async {
@@ -88,6 +93,20 @@ class LessonsRepository {
         }
       }
     }
+  }
+
+  Future<void> clearAll() async {
+    final db = await _db;
+    await db.delete('lessons');
+  }
+
+  Future<void> clearAllRemote() async {
+    final sb = _supabaseOrNull;
+    if (sb == null) return;
+    try {
+      // Some clients require a filter to allow delete
+      await sb.from('lessons').delete().gte('id', 0);
+    } catch (_) {}
   }
 
   // Remote helpers (best-effort)

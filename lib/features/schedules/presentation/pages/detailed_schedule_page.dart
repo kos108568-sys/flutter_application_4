@@ -1,4 +1,4 @@
-﻿import 'dart:math';
+import 'dart:math';
 import 'package:flutter/material.dart';
 import '../../../../core/constants/app_colors.dart';
 import '../../../../core/widgets/sidebar_menu.dart';
@@ -15,6 +15,7 @@ import '../../../groups/data/group_model.dart';
 import '../../../gst/data/group_subject_teachers_repository.dart';
 import '../../../gst/data/group_subject_teacher_model.dart';
 import 'package:flutter/services.dart';
+import '../../domain/schedule_generator.dart';
 
 class DetailedSchedulePage extends StatefulWidget {
   const DetailedSchedulePage({Key? key}) : super(key: key);
@@ -62,11 +63,15 @@ class _DetailedSchedulePageState extends State<DetailedSchedulePage> {
     _initializeData();
   }
 
-  Future<void> _initializeData() async {
-    await groupsRepo.seedIfEmpty();
-    await disciplinesRepo.seedIfEmpty();
-    await teachersRepo.seedIfEmpty();
-    await audiencesRepo.seedIfEmpty();
+Future<void> _initializeData() async {
+    // Initial best-effort sync from remote; no demo/seed data
+    try { await audiencesRepo.syncAudiences(); } catch (_) {}
+    try { await teachersRepo.syncTeachers(); } catch (_) {}
+    try { await disciplinesRepo.syncDisciplines(); } catch (_) {}
+    try { await groupsRepo.syncGroups(); } catch (_) {}
+    try { await gstRepo.syncGST(); } catch (_) {}
+    try { await lessonsRepo.syncLessons(); } catch (_) {}
+    
 
     allGroups = await groupsRepo.getAllGroups(orderBy: 'name ASC');
     allDisciplines = await disciplinesRepo.getAllDisciplines(orderBy: 'name ASC');
@@ -77,11 +82,6 @@ class _DetailedSchedulePageState extends State<DetailedSchedulePage> {
       selectedGroupId = allGroups.first.id ?? 0;
     }
 
-    // Generate demo only on first run
-    final existingLessons = await lessonsRepo.getAll();
-    if (existingLessons.isEmpty) {
-      await lessonsRepo.generateDemoData();
-    }
     
     await _loadLessons();
   }
@@ -164,7 +164,7 @@ class _DetailedSchedulePageState extends State<DetailedSchedulePage> {
             return SizedBox(
               width: 200,
               child: Autocomplete<int>(
-                displayStringForOption: (value) => allGroups.firstWhere((g) => g.id == value).name,
+                displayStringForOption: (value) => allGroups.firstWhere((g) => g.id == value, orElse: () => GroupModel(name: '', disciplineIds: [])).name,
                 optionsBuilder: (textEditingValue) {
                   if (textEditingValue.text.isEmpty) {
                     return allGroups.map((g) => g.id ?? 0);
@@ -177,13 +177,13 @@ class _DetailedSchedulePageState extends State<DetailedSchedulePage> {
                 fieldViewBuilder: (context, textEditingController, focusNode, onFieldSubmitted) {
                   focusNode.addListener(() {
                     if (focusNode.hasFocus) {
-                      // Очищаем поле при фокусе
+                      // очистить поле при фокусе
                       textEditingController.clear();
                     } else {
-                      // Если не было выбора, восстанавливаем исходное значение
+                      // при снятии фокуса восстановить выбранное значение
                       if (selectedGroupId != 0 && allGroups.firstWhere((g) => g.id == selectedGroupId, orElse: () => GroupModel(name: '', disciplineIds: [])).name != textEditingController.text) {
                         if (selectedGroupId != 0) {
-                          textEditingController.text = allGroups.firstWhere((g) => g.id == selectedGroupId).name;
+                          textEditingController.text = allGroups.firstWhere((g) => g.id == selectedGroupId, orElse: () => GroupModel(name: '', disciplineIds: [])).name;
                         }
                       }
                     }
@@ -193,7 +193,7 @@ class _DetailedSchedulePageState extends State<DetailedSchedulePage> {
                     focusNode: focusNode,
                     decoration: InputDecoration(
                       prefixIcon: const Icon(Icons.search),
-                      hintText: 'Группа',
+                      hintText: 'Поиск',
                       border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
                       contentPadding: const EdgeInsets.symmetric(vertical: 8),
                     ),
@@ -241,7 +241,7 @@ class _DetailedSchedulePageState extends State<DetailedSchedulePage> {
         ),
         IconButton(icon: const Icon(Icons.arrow_forward_ios, size: 18), onPressed: _nextWeek),
         const SizedBox(width: 12),
-        IconButton(icon: const Icon(Icons.download), tooltip: 'Выгрузить в календарь', onPressed: () {}),
+        IconButton(icon: const Icon(Icons.delete_forever), tooltip: 'Очистить расписание', onPressed: _clearSchedule),
         const SizedBox(width: 12),
         Flexible(
           child: ElevatedButton(
@@ -404,6 +404,9 @@ class _DetailedSchedulePageState extends State<DetailedSchedulePage> {
 
   Future<void> _generateSchedule() async {
     if (selectedGroupId == 0) return;
+    // Очистка перед генерацией
+    try { await lessonsRepo.clearAllRemote(); } catch (_) {}
+    try { await lessonsRepo.clearAll(); } catch (_) {}
     try { assignments = await gstRepo.getByGroup(selectedGroupId); } catch (_) { assignments = []; }
     if (assignments.isEmpty) {
       if (!mounted) return; 
@@ -411,63 +414,7 @@ class _DetailedSchedulePageState extends State<DetailedSchedulePage> {
       return;
     }
 
-    // Load all lessons for the current week (all groups) to check conflicts
-    List<LessonModel> weekLessonsAll = await lessonsRepo.getAll(weekStart: currentWeekStart);
-
-    bool teacherBusy(int d, int p, int tid) => weekLessonsAll.any((l) => l.dayOfWeek == d && l.pairNo == p && l.teacherId == tid);
-    bool groupBusy(int d, int p, int gid) => weekLessonsAll.any((l) => l.dayOfWeek == d && l.pairNo == p && l.groupId == gid);
-    bool audienceBusy(int d, int p, int aid) => weekLessonsAll.any((l) => l.dayOfWeek == d && l.pairNo == p && l.audienceId == aid);
-
-    final pairsPerDay = times.length.clamp(4, 6);
-    int rr = 0;
-
-    for (int dayIdx = 0; dayIdx < 6; dayIdx++) {
-      for (int pairIdx = 0; pairIdx < pairsPerDay; pairIdx++) {
-        if (groupBusy(dayIdx, pairIdx, selectedGroupId)) continue;
-        final date = currentWeekStart.add(Duration(days: dayIdx));
-        bool placed = false;
-        for (int k = 0; k < assignments.length; k++) {
-          final a = assignments[(rr + k) % assignments.length];
-          final aStart = a.startDate == null ? null : DateTime.tryParse(a.startDate!);
-          final aEnd = a.endDate == null ? null : DateTime.tryParse(a.endDate!);
-          if (aStart != null && date.isBefore(aStart)) continue;
-          if (aEnd != null && date.isAfter(aEnd)) continue;
-          if (teacherBusy(dayIdx, pairIdx, a.teacherId)) continue;
-
-          int? freeAud;
-          for (final aud in allAudiences) {
-            final aid = aud.id;
-            if (aid == null) continue;
-            if (!audienceBusy(dayIdx, pairIdx, aid)) { freeAud = aid; break; }
-          }
-          if (freeAud == null) continue;
-
-          final lesson = LessonModel(
-            disciplineId: a.disciplineId,
-            type: lessonTypes.first,
-            teacherId: a.teacherId,
-            audienceId: freeAud,
-            groupId: selectedGroupId,
-            pairNo: pairIdx,
-            dayOfWeek: dayIdx,
-            date: date,
-            subgroup: '1 подгруппа',
-          );
-          try {
-            await lessonsRepo.insertWithSync(lesson);
-            weekLessonsAll.add(lesson);
-            rr = (rr + k + 1) % assignments.length;
-            placed = true;
-            break;
-          } catch (_) {}
-        }
-        if (!placed) {
-          // no feasible option; leave empty
-        }
-      }
-    }
-
-    await _loadLessons();
+        final generator = ScheduleGenerator(lessonsRepo: lessonsRepo, gstRepo: gstRepo, audiencesRepo: audiencesRepo);    await generator.generate(groupId: selectedGroupId);    await _loadLessons();
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Расписание сгенерировано')));
   }
@@ -591,6 +538,14 @@ class _DetailedSchedulePageState extends State<DetailedSchedulePage> {
     await _loadLessons();
   }
 
+  Future<void> _clearSchedule() async {
+    try { await lessonsRepo.clearAllRemote(); } catch (_) {}
+    await lessonsRepo.clearAll();
+    await _loadLessons();
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Расписание очищено')));
+  }
+
   Future<void> _showAddEditDialog(int pairIdx, int dayIdx, [LessonModel? existingLesson]) async {
     int? disciplineId = existingLesson?.disciplineId;
     String lessonType = existingLesson?.type ?? lessonTypes.first;
@@ -620,10 +575,10 @@ class _DetailedSchedulePageState extends State<DetailedSchedulePage> {
                     builder: (context) {
                       final controller = TextEditingController();
                       if (disciplineId != null) {
-                        controller.text = allDisciplines.firstWhere((d) => d.id == disciplineId).name;
+                        controller.text = allDisciplines.firstWhere((d) => d.id == disciplineId, orElse: () => Discipline(name: '')).name;
                       }
                       return Autocomplete<int>(
-                        displayStringForOption: (value) => allDisciplines.firstWhere((d) => d.id == value).name,
+                        displayStringForOption: (value) => allDisciplines.firstWhere((d) => d.id == value, orElse: () => Discipline(name: '')).name,
                         optionsBuilder: (textEditingValue) {
                           if (textEditingValue.text.isEmpty) {
                             return allDisciplines.map((d) => d.id ?? 0);
@@ -635,13 +590,13 @@ class _DetailedSchedulePageState extends State<DetailedSchedulePage> {
                         fieldViewBuilder: (context, textEditingController, focusNode, onFieldSubmitted) {
                           focusNode.addListener(() {
                             if (focusNode.hasFocus) {
-                              // Очищаем поле при фокусе
+                              // очистить поле при фокусе
                               textEditingController.clear();
                             } else {
-                              // Если не было выбора, восстанавливаем исходное значение
+                              // при снятии фокуса восстановить выбранное значение
                               if (disciplineId == null || allDisciplines.firstWhere((d) => d.id == disciplineId, orElse: () => Discipline(name: '')).name != textEditingController.text) {
                                 if (disciplineId != null) {
-                                  textEditingController.text = allDisciplines.firstWhere((d) => d.id == disciplineId).name;
+                                  textEditingController.text = allDisciplines.firstWhere((d) => d.id == disciplineId, orElse: () => Discipline(name: '')).name;
                                 }
                               }
                             }
@@ -688,10 +643,10 @@ class _DetailedSchedulePageState extends State<DetailedSchedulePage> {
                     builder: (context) {
                       final controller = TextEditingController();
                       if (teacherId != null) {
-                        controller.text = allTeachers.firstWhere((t) => t.id == teacherId).fullName;
+                        controller.text = allTeachers.firstWhere((t) => t.id == teacherId, orElse: () => Teacher(fullName: '')).fullName;
                       }
                       return Autocomplete<int>(
-                        displayStringForOption: (value) => allTeachers.firstWhere((t) => t.id == value).fullName,
+                        displayStringForOption: (value) => allTeachers.firstWhere((t) => t.id == value, orElse: () => Teacher(fullName: '')).fullName,
                         optionsBuilder: (textEditingValue) {
                           if (textEditingValue.text.isEmpty) {
                             return allTeachers.map((t) => t.id ?? 0);
@@ -703,13 +658,13 @@ class _DetailedSchedulePageState extends State<DetailedSchedulePage> {
                         fieldViewBuilder: (context, textEditingController, focusNode, onFieldSubmitted) {
                           focusNode.addListener(() {
                             if (focusNode.hasFocus) {
-                              // Очищаем поле при фокусе
+                              // очистить поле при фокусе
                               textEditingController.clear();
                             } else {
-                              // Если не было выбора, восстанавливаем исходное значение
+                              // при снятии фокуса восстановить выбранное значение
                               if (teacherId == null || allTeachers.firstWhere((t) => t.id == teacherId, orElse: () => Teacher(fullName: '')).fullName != textEditingController.text) {
                                 if (teacherId != null) {
-                                  textEditingController.text = allTeachers.firstWhere((t) => t.id == teacherId).fullName;
+                                  textEditingController.text = allTeachers.firstWhere((t) => t.id == teacherId, orElse: () => Teacher(fullName: '')).fullName;
                                 }
                               }
                             }
@@ -741,10 +696,10 @@ class _DetailedSchedulePageState extends State<DetailedSchedulePage> {
                     builder: (context) {
                       final controller = TextEditingController();
                       if (audienceId != null) {
-                        controller.text = allAudiences.firstWhere((a) => a.id == audienceId).name;
+                        controller.text = allAudiences.firstWhere((a) => a.id == audienceId, orElse: () => Audience(name: '')).name;
                       }
                       return Autocomplete<int>(
-                        displayStringForOption: (value) => allAudiences.firstWhere((a) => a.id == value).name,
+                        displayStringForOption: (value) => allAudiences.firstWhere((a) => a.id == value, orElse: () => Audience(name: '')).name,
                         optionsBuilder: (textEditingValue) {
                           if (textEditingValue.text.isEmpty) {
                             return allAudiences.map((a) => a.id ?? 0);
@@ -756,13 +711,13 @@ class _DetailedSchedulePageState extends State<DetailedSchedulePage> {
                         fieldViewBuilder: (context, textEditingController, focusNode, onFieldSubmitted) {
                           focusNode.addListener(() {
                             if (focusNode.hasFocus) {
-                              // Очищаем поле при фокусе
+                              // очистить поле при фокусе
                               textEditingController.clear();
                             } else {
-                              // Если не было выбора, восстанавливаем исходное значение
+                              // при снятии фокуса восстановить выбранное значение
                               if (audienceId == null || allAudiences.firstWhere((a) => a.id == audienceId, orElse: () => Audience(name: '')).name != textEditingController.text) {
                                 if (audienceId != null) {
-                                  textEditingController.text = allAudiences.firstWhere((a) => a.id == audienceId).name;
+                                  textEditingController.text = allAudiences.firstWhere((a) => a.id == audienceId, orElse: () => Audience(name: '')).name;
                                 }
                               }
                             }
@@ -788,7 +743,7 @@ class _DetailedSchedulePageState extends State<DetailedSchedulePage> {
                     },
                   ),
                   const SizedBox(height: 16),
-                  Text('Группа/Подгруппа *', style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 14, color: Colors.black87)),
+                  Text('Группа/подгруппа *', style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 14, color: Colors.black87)),
                   const SizedBox(height: 6),
                   DropdownButtonFormField<String>(
                     value: subgroup,
