@@ -224,9 +224,49 @@ class AudiencesRepository {
       final remoteById = {for (final row in remoteList) row['id'] as int: row};
 
       for (final entry in localById.entries) {
-        if (!remoteById.containsKey(entry.key)) {
+        final local = entry.value;
+        final localId = entry.key;
+        final mappedRemoteId = (local['remote_id'] as num?)?.toInt();
+
+        // If we already know the remote id and it exists remotely, just reconcile ids locally and skip insert
+        if (mappedRemoteId != null && remoteById.containsKey(mappedRemoteId)) {
+          if (mappedRemoteId != localId) {
+            try {
+              await db.transaction((txn) async {
+                await txn.delete(
+                  'audience_lesson_types',
+                  where: 'audience_id = ?',
+                  whereArgs: [mappedRemoteId],
+                );
+                await txn.delete(
+                  'audiences',
+                  where: 'id = ?',
+                  whereArgs: [mappedRemoteId],
+                );
+                await txn.update(
+                  'audiences',
+                  {
+                    'id': mappedRemoteId,
+                    'remote_id': mappedRemoteId,
+                  },
+                  where: 'id = ?',
+                  whereArgs: [localId],
+                );
+                await txn.update(
+                  'audience_lesson_types',
+                  {'audience_id': mappedRemoteId},
+                  where: 'audience_id = ?',
+                  whereArgs: [localId],
+                );
+              });
+            } catch (_) {}
+          }
+          continue;
+        }
+
+        // If neither local id nor mapped remote id exist remotely, create remote and reconcile
+        if (!remoteById.containsKey(localId)) {
           try {
-            final local = entry.value;
             final payload = {
               'name': local['name'],
               'type': local['type'],
@@ -241,7 +281,7 @@ class AudiencesRepository {
                 .select('id')
                 .maybeSingle();
             final remoteId = res?['id'] as int?;
-            if (remoteId != null && remoteId != entry.key) {
+            if (remoteId != null && remoteId != localId) {
               await db.transaction((txn) async {
                 await txn.delete(
                   'audience_lesson_types',
@@ -260,22 +300,37 @@ class AudiencesRepository {
                     'remote_id': remoteId,
                   },
                   where: 'id = ?',
-                  whereArgs: [entry.key],
+                  whereArgs: [localId],
                 );
                 await txn.update(
                   'audience_lesson_types',
                   {'audience_id': remoteId},
                   where: 'audience_id = ?',
-                  whereArgs: [entry.key],
+                  whereArgs: [localId],
                 );
               });
+
+              // Also mirror lesson types to remote for this audience to avoid empty types on duplicates
+              try {
+                final pairs = await _lessonTypesRepo.getByAudience(remoteId);
+                final typeIds = pairs.map((e) => e.lessonTypeId).toList();
+                await _lessonTypesRepo.replaceRemote(remoteId, typeIds);
+              } catch (_) {}
+
             } else if (remoteId != null) {
               await db.update(
                 'audiences',
                 {'remote_id': remoteId},
                 where: 'id = ?',
-                whereArgs: [entry.key],
+                whereArgs: [localId],
               );
+
+              // Ensure lesson types are synced remotely when ids match
+              try {
+                final pairs = await _lessonTypesRepo.getByAudience(localId);
+                final typeIds = pairs.map((e) => e.lessonTypeId).toList();
+                await _lessonTypesRepo.replaceRemote(remoteId, typeIds);
+              } catch (_) {}
             }
           } catch (_) {}
         }
