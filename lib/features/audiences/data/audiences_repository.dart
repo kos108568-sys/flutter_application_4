@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:sqflite/sqflite.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
@@ -94,7 +96,10 @@ class AudiencesRepository {
         await db.transaction((txn) async {
           await txn.update(
             'audiences',
-            {'id': remoteId},
+            {
+              'id': remoteId,
+              'remote_id': remoteId,
+            },
             where: 'id = ?',
             whereArgs: [localId],
           );
@@ -106,6 +111,13 @@ class AudiencesRepository {
           );
         });
         return remoteId;
+      } else if (remoteId != null) {
+        await db.update(
+          'audiences',
+          {'remote_id': remoteId},
+          where: 'id = ?',
+          whereArgs: [localId],
+        );
       }
     } catch (_) {
       // offline mode
@@ -176,7 +188,25 @@ class AudiencesRepository {
     await _supabase.from('audiences').delete().eq('id', id);
   }
 
-  Future<void> syncAudiences() async {
+  static Future<void>? _syncInProgress;
+
+  Future<void> syncAudiences() {
+    final inFlight = _syncInProgress;
+    if (inFlight != null) {
+      return inFlight;
+    }
+
+    late final Future<void> future;
+    future = _syncAudiencesInternal().whenComplete(() {
+      if (identical(_syncInProgress, future)) {
+        _syncInProgress = null;
+      }
+    });
+    _syncInProgress = future;
+    return future;
+  }
+
+  Future<void> _syncAudiencesInternal() async {
     try {
       final db = await _db;
       final localRows = await db.query('audiences');
@@ -205,7 +235,48 @@ class AudiencesRepository {
               'teacher_id': local['teacher_id'],
               'notes': local['notes'],
             };
-            await _supabase.from('audiences').insert(payload);
+            final res = await _supabase
+                .from('audiences')
+                .insert(payload)
+                .select('id')
+                .maybeSingle();
+            final remoteId = res?['id'] as int?;
+            if (remoteId != null && remoteId != entry.key) {
+              await db.transaction((txn) async {
+                await txn.delete(
+                  'audience_lesson_types',
+                  where: 'audience_id = ?',
+                  whereArgs: [remoteId],
+                );
+                await txn.delete(
+                  'audiences',
+                  where: 'id = ?',
+                  whereArgs: [remoteId],
+                );
+                await txn.update(
+                  'audiences',
+                  {
+                    'id': remoteId,
+                    'remote_id': remoteId,
+                  },
+                  where: 'id = ?',
+                  whereArgs: [entry.key],
+                );
+                await txn.update(
+                  'audience_lesson_types',
+                  {'audience_id': remoteId},
+                  where: 'audience_id = ?',
+                  whereArgs: [entry.key],
+                );
+              });
+            } else if (remoteId != null) {
+              await db.update(
+                'audiences',
+                {'remote_id': remoteId},
+                where: 'id = ?',
+                whereArgs: [entry.key],
+              );
+            }
           } catch (_) {}
         }
       }
@@ -227,8 +298,20 @@ class AudiencesRepository {
             );
             await db.insert(
               'audiences',
-              mapped.toMap(),
+              {
+                ...mapped.toMap(),
+                'remote_id': remote['id'],
+              },
               conflictAlgorithm: ConflictAlgorithm.ignore,
+            );
+          } catch (_) {}
+        } else {
+          try {
+            await db.update(
+              'audiences',
+              {'remote_id': entry.key},
+              where: 'id = ? AND (remote_id IS NULL OR remote_id != ?)',
+              whereArgs: [entry.key, entry.key],
             );
           } catch (_) {}
         }

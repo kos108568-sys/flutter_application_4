@@ -1,3 +1,4 @@
+import 'dart:io';
 import 'dart:math';
 import 'package:flutter/material.dart';
 import '../../../../core/constants/app_colors.dart';
@@ -10,12 +11,16 @@ import '../../../teachers/data/teachers_repository.dart';
 import '../../../teachers/data/teacher_model.dart';
 import '../../../audiences/data/audiences_repository.dart';
 import '../../../audiences/data/audience_model.dart';
+import '../../../audiences/data/audience_lesson_types_repository.dart';
 import '../../../groups/data/groups_repository.dart';
 import '../../../groups/data/group_model.dart';
 import '../../../gst/data/group_subject_teachers_repository.dart';
 import '../../../gst/data/group_subject_teacher_model.dart';
+import '../../../lesson_types/data/lesson_type_repository.dart';
+import '../../../time_slots/data/time_slot_repository.dart';
+import '../../domain/solver/schedule_request_builder.dart';
+import '../../domain/solver/schedule_solver_service.dart';
 import 'package:flutter/services.dart';
-import '../../domain/schedule_generator.dart';
 
 class DetailedSchedulePage extends StatefulWidget {
   const DetailedSchedulePage({Key? key}) : super(key: key);
@@ -30,6 +35,27 @@ class _DetailedSchedulePageState extends State<DetailedSchedulePage> {
   final audiencesRepo = AudiencesRepository();
   final groupsRepo = GroupsRepository();
   final gstRepo = GroupSubjectTeachersRepository();
+  final lessonTypeRepo = LessonTypeRepository();
+  final timeSlotRepo = TimeSlotRepository();
+  final audienceLessonTypesRepo = AudienceLessonTypesRepository();
+
+  late final ScheduleSolverService _solverService = ScheduleSolverService(
+    requestBuilder: ScheduleRequestBuilder(
+      groupsRepository: groupsRepo,
+      teachersRepository: teachersRepo,
+      lessonTypeRepository: lessonTypeRepo,
+      disciplinesRepository: disciplinesRepo,
+      timeSlotRepository: timeSlotRepo,
+      audiencesRepository: audiencesRepo,
+      audienceLessonTypesRepository: audienceLessonTypesRepo,
+      groupSubjectTeachersRepository: gstRepo,
+      lessonsRepository: lessonsRepo,
+    ),
+    gstRepository: gstRepo,
+    lessonsRepository: lessonsRepo,
+    pythonExecutable: Platform.isWindows ? 'py' : 'python3',
+    pythonArgs: Platform.isWindows ? const ['-3.11'] : const [],
+  );
 
   final times = ['08:00 - 09:30', '09:40 - 11:10', '11:20 - 12:50', '13:10 - 14:40', '14:50 - 16:20'];
   final lessonTypes = ['Лекция', 'Практика', 'Лабораторная', 'Семинар'];
@@ -70,6 +96,9 @@ Future<void> _initializeData() async {
     try { await disciplinesRepo.syncDisciplines(); } catch (_) {}
     try { await groupsRepo.syncGroups(); } catch (_) {}
     try { await gstRepo.syncGST(); } catch (_) {}
+    try { await lessonTypeRepo.syncLessonTypes(); } catch (_) {}
+    try { await timeSlotRepo.syncTimeSlots(); } catch (_) {}
+    try { await audienceLessonTypesRepo.syncAudienceLessonTypes(); } catch (_) {}
     try { await lessonsRepo.syncLessons(); } catch (_) {}
     
 
@@ -404,19 +433,32 @@ Future<void> _initializeData() async {
 
   Future<void> _generateSchedule() async {
     if (selectedGroupId == 0) return;
-    // Очистка перед генерацией
-    try { await lessonsRepo.clearAllRemote(); } catch (_) {}
-    try { await lessonsRepo.clearAll(); } catch (_) {}
-    try { assignments = await gstRepo.getByGroup(selectedGroupId); } catch (_) { assignments = []; }
-    if (assignments.isEmpty) {
-      if (!mounted) return; 
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Нет назначений для группы')));
-      return;
-    }
-
-        final generator = ScheduleGenerator(lessonsRepo: lessonsRepo, gstRepo: gstRepo, audiencesRepo: audiencesRepo);    await generator.generate(groupId: selectedGroupId);    await _loadLessons();
     if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Расписание сгенерировано')));
+
+    showDialog<void>(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) => const Center(child: CircularProgressIndicator()),
+    );
+
+    try {
+      final solution = await _solverService.solveAndApply();
+      await _loadLessons();
+      if (!mounted) return;
+      final count = solution.lessons.length;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Расписание сгенерировано: $count занятий')),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Ошибка генерации: $e')),
+      );
+    } finally {
+      if (mounted) {
+        Navigator.of(context, rootNavigator: true).pop();
+      }
+    }
   }
 
   Widget _buildLessonCardWithColor(LessonModel lesson, int pairIdx, int dayIdx, Color cardColor) {

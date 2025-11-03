@@ -324,8 +324,104 @@ class DBHelper {
     }
   }
 
+  Future<void> _migrateLessonsTable(Database db) async {
+    final hasTable = await db.rawQuery(
+      'SELECT name FROM sqlite_master WHERE type = "table" AND name = "lessons"',
+    );
+    if (hasTable.isEmpty) {
+      return;
+    }
+
+    bool needsMigration = false;
+    try {
+      final fkList = await db.rawQuery('PRAGMA foreign_key_list(lessons)');
+      needsMigration = fkList.any((row) {
+        final table = row['table'] as String? ?? '';
+        return table.toLowerCase() == 'audiences_old_backup';
+      });
+    } catch (_) {
+      needsMigration = false;
+    }
+    if (!needsMigration) {
+      return;
+    }
+
+    await db.execute('PRAGMA foreign_keys = OFF');
+    try {
+      await db.transaction((txn) async {
+        await txn.execute('ALTER TABLE lessons RENAME TO lessons_old_backup;');
+        await txn.execute('''
+          CREATE TABLE lessons (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            discipline_id INTEGER NOT NULL,
+            type TEXT,
+            teacher_id INTEGER NOT NULL,
+            audience_id INTEGER NOT NULL,
+            group_id INTEGER NOT NULL,
+            pair_no INTEGER NOT NULL,
+            day_of_week INTEGER NOT NULL,
+            date TEXT NOT NULL,
+            subgroup TEXT,
+            remote_id TEXT,
+            updated_at INTEGER,
+            deleted INTEGER DEFAULT 0,
+            sync_state TEXT DEFAULT 'synced',
+            FOREIGN KEY (discipline_id) REFERENCES disciplines(id),
+            FOREIGN KEY (teacher_id) REFERENCES teachers(id),
+            FOREIGN KEY (audience_id) REFERENCES audiences(id),
+            FOREIGN KEY (group_id) REFERENCES groups(id)
+          );
+        ''');
+        final oldInfo = await txn.rawQuery('PRAGMA table_info(lessons_old_backup)');
+        final hasColumn = (String name) =>
+            oldInfo.any((row) => (row['name'] as String).toLowerCase() == name.toLowerCase());
+        final selectSql = '''
+          SELECT
+            id,
+            discipline_id,
+            type,
+            teacher_id,
+            audience_id,
+            group_id,
+            pair_no,
+            day_of_week,
+            date,
+            ${hasColumn('subgroup') ? 'subgroup' : 'NULL'} AS subgroup,
+            ${hasColumn('remote_id') ? 'remote_id' : 'NULL'} AS remote_id,
+            ${hasColumn('updated_at') ? 'updated_at' : 'NULL'} AS updated_at,
+            ${hasColumn('deleted') ? 'deleted' : '0'} AS deleted,
+            ${hasColumn('sync_state') ? 'sync_state' : "'synced'"} AS sync_state
+          FROM lessons_old_backup;
+        ''';
+        await txn.execute('''
+          INSERT INTO lessons (
+            id,
+            discipline_id,
+            type,
+            teacher_id,
+            audience_id,
+            group_id,
+            pair_no,
+            day_of_week,
+            date,
+            subgroup,
+            remote_id,
+            updated_at,
+            deleted,
+            sync_state
+          )
+          $selectSql
+        ''');
+        await txn.execute('DROP TABLE IF EXISTS lessons_old_backup;');
+      });
+    } finally {
+      await db.execute('PRAGMA foreign_keys = ON');
+    }
+  }
+
   Future<void> _ensureSchema(Database db) async {
     await _migrateAudiencesTable(db);
+    await _migrateLessonsTable(db);
 
     await db.execute('''
       CREATE TABLE IF NOT EXISTS audiences (
@@ -357,12 +453,17 @@ class DBHelper {
         day_of_week INTEGER NOT NULL,
         date TEXT NOT NULL,
         subgroup TEXT,
+        remote_id TEXT,
+        updated_at INTEGER,
+        deleted INTEGER DEFAULT 0,
+        sync_state TEXT DEFAULT 'synced',
         FOREIGN KEY (discipline_id) REFERENCES disciplines(id),
         FOREIGN KEY (teacher_id) REFERENCES teachers(id),
         FOREIGN KEY (audience_id) REFERENCES audiences(id),
         FOREIGN KEY (group_id) REFERENCES groups(id)
       );
     ''');
+
     await db.execute('CREATE INDEX IF NOT EXISTS idx_lessons_date ON lessons(date);');
     await db.execute(
       'CREATE INDEX IF NOT EXISTS idx_lessons_group_date ON lessons(group_id, date);',
@@ -370,7 +471,6 @@ class DBHelper {
     await db.execute(
       'CREATE UNIQUE INDEX IF NOT EXISTS uq_lessons_group_date_pair ON lessons(group_id, date, pair_no, subgroup);',
     );
-
     await db.execute('''
       CREATE TABLE IF NOT EXISTS disciplines (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
