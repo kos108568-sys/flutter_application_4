@@ -73,6 +73,7 @@ class Option:
     slot_id: int
     slot_order: int
     subgroup: Optional[str]
+    is_preferred_audience: bool
 
 
 # ---------------------------------------------------------------------------
@@ -264,6 +265,7 @@ def build_solution(request: Dict[str, Any], verbose: bool = False) -> Dict[str, 
     session_options: List[Option] = []
     session_to_options: Dict[int, List[Option]] = defaultdict(list)
     option_vars: Dict[Tuple[int, int], cp_model.BoolVar] = {}
+    penalty_terms: List[cp_model.BoolVar] = []
 
     # Prepare model
     model = cp_model.CpModel()
@@ -286,6 +288,13 @@ def build_solution(request: Dict[str, Any], verbose: bool = False) -> Dict[str, 
             raise RuntimeError(
                 f"No suitable audiences for assignment {assignment.assignment_id}"
             )
+
+        preferred_set = {
+            aud_id
+            for aud_id in candidate_audiences
+            if audiences[aud_id].preferred_teacher_id == assignment.teacher_id
+        }
+        has_preferred = bool(preferred_set)
 
         session_indices = list(range(next_session_index, next_session_index + assignment.remaining_pairs))
         next_session_index += assignment.remaining_pairs
@@ -321,6 +330,7 @@ def build_solution(request: Dict[str, Any], verbose: bool = False) -> Dict[str, 
                         slot_id=slot.slot_id,
                         slot_order=slot.order,
                         subgroup=assignment.subgroup,
+                        is_preferred_audience=aud_id in preferred_set,
                     )
                     possible_options.append((option_counter, option))
                     option_counter += 1
@@ -347,11 +357,14 @@ def build_solution(request: Dict[str, Any], verbose: bool = False) -> Dict[str, 
                     slot_id=option.slot_id,
                     slot_order=option.slot_order,
                     subgroup=option.subgroup,
+                    is_preferred_audience=option.is_preferred_audience,
                 )
                 options_for_session[session_idx].append(opt)
                 session_options.append(opt)
                 var = model.NewBoolVar(f"sess{session_idx}_opt{option_index}")
                 option_vars[(session_idx, option_index)] = var
+                if has_preferred and not opt.is_preferred_audience:
+                    penalty_terms.append(var)
             if not options_for_session[session_idx]:
                 raise RuntimeError(
                     f"Нет доступных вариантов для занятия заявки {assignment.assignment_id}"
@@ -401,7 +414,10 @@ def build_solution(request: Dict[str, Any], verbose: bool = False) -> Dict[str, 
     add_limit(group_day_vars, group_day_load, 6)
     add_limit(teacher_day_vars, teacher_day_load, 6)
 
-    model.Minimize(0)
+    if penalty_terms:
+        model.Minimize(sum(penalty_terms))
+    else:
+        model.Minimize(0)
 
     solver = cp_model.CpSolver()
     solver.parameters.max_time_in_seconds = 15
