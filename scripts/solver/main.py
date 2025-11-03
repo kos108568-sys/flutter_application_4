@@ -15,6 +15,9 @@ from typing import Any, Dict, Iterable, List, Optional, Tuple
 from ortools.sat.python import cp_model
 
 
+MAX_PAIRS_PER_DAY: Optional[int] = None  # Set to 6 to enforce limit, None to disable
+
+
 # ---------------------------------------------------------------------------
 # Data containers
 # ---------------------------------------------------------------------------
@@ -61,7 +64,6 @@ class ExistingLesson:
 
 @dataclass
 class Option:
-    session_index: int
     option_index: int
     assignment_id: int
     group_id: int
@@ -262,15 +264,14 @@ def build_solution(request: Dict[str, Any], verbose: bool = False) -> Dict[str, 
             return set(range(6))  # Mon..Sat
         return set(range(5))  # Mon..Fri
 
-    session_options: List[Option] = []
-    session_to_options: Dict[int, List[Option]] = defaultdict(list)
-    option_vars: Dict[Tuple[int, int], cp_model.BoolVar] = {}
+    options: List[Option] = []
+    option_vars: List[cp_model.BoolVar] = []
+    assignment_to_option_indexes: Dict[int, List[int]] = defaultdict(list)
+    assignment_option_count: Dict[int, int] = defaultdict(int)
     penalty_terms: List[cp_model.BoolVar] = []
 
     # Prepare model
     model = cp_model.CpModel()
-
-    next_session_index = 0
 
     for assignment in assignments.values():
         allowed_days = allowed_day_indexes(assignment.lesson_type_id)
@@ -296,11 +297,6 @@ def build_solution(request: Dict[str, Any], verbose: bool = False) -> Dict[str, 
         }
         has_preferred = bool(preferred_set)
 
-        session_indices = list(range(next_session_index, next_session_index + assignment.remaining_pairs))
-        next_session_index += assignment.remaining_pairs
-
-        options_for_session: Dict[int, List[Option]] = {idx: [] for idx in session_indices}
-
         possible_options: List[Tuple[int, Option]] = []
         option_counter = 0
         for dt in all_dates:
@@ -318,7 +314,6 @@ def build_solution(request: Dict[str, Any], verbose: bool = False) -> Dict[str, 
                     if (aud_id, dt, slot.order) in audience_slot_busy:
                         continue
                     option = Option(
-                        session_index=-1,  # to be assigned below
                         option_index=option_counter,
                         assignment_id=assignment.assignment_id,
                         group_id=assignment.group_id,
@@ -339,44 +334,21 @@ def build_solution(request: Dict[str, Any], verbose: bool = False) -> Dict[str, 
             raise RuntimeError(
                 f"Недостаточно свободных слотов для заявки {assignment.assignment_id}"
             )
+        assignment_option_count[assignment.assignment_id] += len(possible_options)
 
-        # Distribute options across sessions evenly
-        for idx, session_idx in enumerate(session_indices):
-            count = 0
-            for option_index, option in possible_options:
-                opt = Option(
-                    session_index=session_idx,
-                    option_index=option_index,
-                    assignment_id=option.assignment_id,
-                    group_id=option.group_id,
-                    teacher_id=option.teacher_id,
-                    audience_id=option.audience_id,
-                    discipline_id=option.discipline_id,
-                    lesson_type_id=option.lesson_type_id,
-                    lesson_date=option.lesson_date,
-                    slot_id=option.slot_id,
-                    slot_order=option.slot_order,
-                    subgroup=option.subgroup,
-                    is_preferred_audience=option.is_preferred_audience,
-                )
-                options_for_session[session_idx].append(opt)
-                session_options.append(opt)
-                var = model.NewBoolVar(f"sess{session_idx}_opt{option_index}")
-                option_vars[(session_idx, option_index)] = var
-                if has_preferred and not opt.is_preferred_audience:
-                    penalty_terms.append(var)
-            if not options_for_session[session_idx]:
-                raise RuntimeError(
-                    f"Нет доступных вариантов для занятия заявки {assignment.assignment_id}"
-                )
+        for option_index, option in possible_options:
+            option_global_index = len(options)
+            options.append(option)
+            var = model.NewBoolVar(f"opt_{option_global_index}")
+            option_vars.append(var)
+            assignment_to_option_indexes[assignment.assignment_id].append(option_global_index)
+            if has_preferred and not option.is_preferred_audience:
+                penalty_terms.append(var)
 
-        for session_idx in session_indices:
-            vars_for_session = [
-                option_vars[(session_idx, opt.option_index)]
-                for opt in options_for_session[session_idx]
-            ]
-            model.Add(sum(vars_for_session) == 1)
-            session_to_options[session_idx] = options_for_session[session_idx]
+        assignment_vars = [
+            option_vars[idx] for idx in assignment_to_option_indexes[assignment.assignment_id]
+        ]
+        model.Add(sum(assignment_vars) == assignment.remaining_pairs)
 
     # Conflict constraints
     def add_limit(key_map: Dict[Tuple[Any, ...], List[cp_model.BoolVar]], limit_map: Dict[Tuple[Any, ...], int], base_limit: int):
@@ -394,8 +366,8 @@ def build_solution(request: Dict[str, Any], verbose: bool = False) -> Dict[str, 
     group_day_vars: Dict[Tuple[int, date], List[cp_model.BoolVar]] = defaultdict(list)
     teacher_day_vars: Dict[Tuple[int, date], List[cp_model.BoolVar]] = defaultdict(list)
 
-    for opt in session_options:
-        var = option_vars[(opt.session_index, opt.option_index)]
+    for idx, opt in enumerate(options):
+        var = option_vars[idx]
         key = (opt.group_id, opt.lesson_date, opt.slot_order)
         group_slot_vars[key].append(var)
         key = (opt.teacher_id, opt.lesson_date, opt.slot_order)
@@ -411,8 +383,17 @@ def build_solution(request: Dict[str, Any], verbose: bool = False) -> Dict[str, 
         model.Add(sum(vars_list) <= 1)
     for vars_list in audience_slot_vars.values():
         model.Add(sum(vars_list) <= 1)
-    add_limit(group_day_vars, group_day_load, 6)
-    add_limit(teacher_day_vars, teacher_day_load, 6)
+    if MAX_PAIRS_PER_DAY is not None:
+        for key, vars_list in group_day_vars.items():
+            limit = MAX_PAIRS_PER_DAY - group_day_load.get(key, 0)
+            if limit < 0:
+                limit = 0
+            model.Add(sum(vars_list) <= limit)
+        for key, vars_list in teacher_day_vars.items():
+            limit = MAX_PAIRS_PER_DAY - teacher_day_load.get(key, 0)
+            if limit < 0:
+                limit = 0
+            model.Add(sum(vars_list) <= limit)
 
     if penalty_terms:
         model.Minimize(sum(penalty_terms))
@@ -423,29 +404,34 @@ def build_solution(request: Dict[str, Any], verbose: bool = False) -> Dict[str, 
     solver.parameters.max_time_in_seconds = 15
     status = solver.Solve(model)
     if status not in (cp_model.OPTIMAL, cp_model.FEASIBLE):
-        raise RuntimeError("Распределить пары не удалось. Попробуйте сократить период или ослабить ограничения.")
+        assignment_summaries = []
+        for assignment in assignments.values():
+            option_count = assignment_option_count.get(assignment.assignment_id, 0)
+            assignment_summaries.append(
+                f"заявка {assignment.assignment_id}: нужно {assignment.remaining_pairs} пар, вариантов {option_count}"
+            )
+        details = "; ".join(assignment_summaries)
+        raise RuntimeError(
+            "Распределить пары не удалось. Попробуйте сократить период или ослабить ограничения.\n"
+            f"Детали: {details}"
+        )
 
     scheduled: List[Dict[str, Any]] = []
-    for session_idx, options in session_to_options.items():
-        chosen = None
-        for opt in options:
-            var = option_vars[(opt.session_index, opt.option_index)]
-            if solver.Value(var):
-                chosen = opt
-                break
-        if chosen is None:
+    for idx, opt in enumerate(options):
+        var = option_vars[idx]
+        if not solver.Value(var):
             continue
         scheduled.append(
             {
-                "assignmentId": chosen.assignment_id,
-                "groupId": chosen.group_id,
-                "teacherId": chosen.teacher_id,
-                "audienceId": chosen.audience_id,
-                "disciplineId": chosen.discipline_id,
-                "lessonTypeId": chosen.lesson_type_id,
-                "date": chosen.lesson_date.isoformat(),
-                "slotId": chosen.slot_id,
-                "subgroup": chosen.subgroup,
+                "assignmentId": opt.assignment_id,
+                "groupId": opt.group_id,
+                "teacherId": opt.teacher_id,
+                "audienceId": opt.audience_id,
+                "disciplineId": opt.discipline_id,
+                "lessonTypeId": opt.lesson_type_id,
+                "date": opt.lesson_date.isoformat(),
+                "slotId": opt.slot_id,
+                "subgroup": opt.subgroup,
             }
         )
 
